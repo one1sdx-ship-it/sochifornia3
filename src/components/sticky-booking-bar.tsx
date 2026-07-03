@@ -22,7 +22,7 @@ export function StickyBookingBar({ price }: { price: number }) {
   return (
     <div
       className={cn(
-        "fixed inset-x-0 bottom-[68px] z-30 border-t border-hairline bg-bg/95 px-5 py-3 backdrop-blur-lg transition-transform duration-300 lg:bottom-0 lg:hidden",
+        "fixed inset-x-0 bottom-[calc(63px_+_env(safe-area-inset-bottom))] z-30 border-t border-hairline bg-bg/95 px-5 py-3 backdrop-blur-lg transition-transform duration-300 lg:bottom-0 lg:hidden",
         show ? "translate-y-0" : "translate-y-full"
       )}
     >

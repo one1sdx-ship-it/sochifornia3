@@ -35,8 +35,7 @@ export function Hero() {
           </h1>
 
           <p className="mt-6 max-w-xl text-lg text-white/90 sm:text-xl">
-            Авторские морские, горные и городские экскурсии. Надёжно, пунктуально и без скрытых
-            доплат — мы отвечаем за каждую минуту вашего отдыха.
+            Авторские морские, горные и городские экскурсии.
           </p>
 
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -47,7 +46,7 @@ export function Hero() {
           </div>
 
           <ul className="mt-12 grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
-            <Trust icon={ShieldCheck} title="Надёжно" text="Договор и страховка на каждый тур" />
+            <Trust icon={ShieldCheck} title="Незабываемо" text="Наша ответственность – ваши эмоции" />
             <Trust icon={Clock} title="Пунктуально" text="Забираем точно в срок от отеля" />
             <Trust icon={HeartHandshake} title="Честно" text="Никаких скрытых доплат" />
           </ul>

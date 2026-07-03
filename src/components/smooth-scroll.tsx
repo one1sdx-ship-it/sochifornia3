@@ -41,6 +41,18 @@ export function scrollElementToCenter(el: HTMLElement | null, duration = 1200) {
   centerRAF = requestAnimationFrame(step);
 }
 
+// Остановить/возобновить прокрутку (полноэкранный просмотр фото и т.п.):
+// одного overflow:hidden недостаточно, т.к. Lenis сам крутит window.scrollTo по wheel/touch.
+export function stopScroll() {
+  lenisInstance?.stop();
+  document.body.style.overflow = "hidden";
+}
+
+export function startScroll() {
+  lenisInstance?.start();
+  document.body.style.overflow = "";
+}
+
 export const SCROLL_TOP_EVENT = "app:scrolltop";
 
 export function SmoothScroll() {

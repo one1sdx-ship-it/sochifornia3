@@ -276,18 +276,35 @@ export function TourCard({ tour }: { tour: Tour }) {
         <p className="mt-2 line-clamp-2 text-sm text-body">{tour.excerpt}</p>
 
         <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
-          {/* 1-й уровень: тезисы — чипы-пилюли с галочкой; строго в столбик (по одному в строке) и прижаты к правому краю */}
+          {/* 1-й уровень: тезисы — чипы-пилюли с галочкой.
+              Мобайл: бесшовная карусель-марки́, авто-скролл справа налево.
+              Десктоп (sm+): строго в столбик (по одному в строке), прижаты к правому краю. */}
           {highlights.length > 0 && (
-            <ul className="flex flex-col items-end gap-1.5">
-              {highlights.map((h) => (
-                <li
-                  key={h}
-                  className="flex items-center gap-1 whitespace-nowrap rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary"
-                >
-                  <Check className="h-3 w-3 shrink-0" /> <span>{h}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="-mx-5 overflow-hidden sm:hidden [mask-image:linear-gradient(to_right,transparent,black_20px,black_calc(100%-20px),transparent)]">
+                <ul className="flex w-max animate-marquee gap-1.5 px-5">
+                  {[...highlights, ...highlights].map((h, i) => (
+                    <li
+                      key={h + i}
+                      className="flex items-center gap-1 whitespace-nowrap rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary"
+                    >
+                      <Check className="h-3 w-3 shrink-0" /> <span>{h}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <ul className="hidden flex-col items-end gap-1.5 sm:flex">
+                {highlights.map((h) => (
+                  <li
+                    key={h}
+                    className="flex items-center gap-1 whitespace-nowrap rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary"
+                  >
+                    <Check className="h-3 w-3 shrink-0" /> <span>{h}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
 
           {/* 2-й уровень: цена и кнопка «Подробнее», отцентрованы по вертикали */}

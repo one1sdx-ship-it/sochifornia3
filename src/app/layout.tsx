@@ -4,6 +4,7 @@ import "@/styles/globals.css";
 import { site } from "@/data/site";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SmoothScroll } from "@/components/smooth-scroll";
+import { SplashScreen } from "@/components/splash-screen";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { MobileNav } from "@/components/layout/mobile-nav";
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
         <ThemeProvider>
           <SmoothScroll />
+          <SplashScreen />
           <Header />
           <main>{children}</main>
           <Footer />

@@ -77,7 +77,7 @@ export default async function TourPage({
       {/* HERO */}
       <TourHeroCarousel image={tour.image} title={tour.title}>
         <div className="container-wide relative flex min-h-[58vh] flex-col justify-end py-12 text-white sm:min-h-[64vh]">
-          <nav className="mb-auto pt-4 text-sm text-white/80" aria-label="Хлебные крошки">
+          <nav className="pointer-events-auto mb-auto pt-4 text-sm text-white/80" aria-label="Хлебные крошки">
             <ol className="flex flex-wrap items-center gap-1.5">
               <li><Link href="/" className="hover:text-white">Главная</Link></li>
               <ChevronRight className="h-4 w-4" />
