@@ -5,7 +5,7 @@ import { nav, site } from "@/data/site";
 export function Footer() {
   return (
     <footer className="border-t border-hairline bg-surface">
-      <div className="container-wide grid gap-10 py-14 pb-28 sm:grid-cols-2 lg:grid-cols-4 lg:pb-14">
+      <div className="container-wide grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <span className="font-display text-xl font-bold text-ink">Sochifornia Travel</span>
           <p className="mt-3 max-w-xs text-sm text-body">{site.tagline}</p>
@@ -69,7 +69,7 @@ export function Footer() {
       </div>
 
       <div className="border-t border-hairline">
-        <div className="container-wide flex flex-col items-center justify-between gap-2 py-5 text-xs text-muted sm:flex-row">
+        <div className="container-wide flex flex-col items-center justify-between gap-2 py-5 pb-[calc(6rem+env(safe-area-inset-bottom))] text-xs text-muted sm:flex-row lg:pb-5">
           <p>© {new Date().getFullYear()} Sochifornia Travel. Все права защищены.</p>
           <div className="flex gap-4">
             <Link href="/privacy" className="hover:text-primary">Политика конфиденциальности</Link>

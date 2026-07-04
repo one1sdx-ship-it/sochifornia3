@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import type { Tour, TourCategory } from "@/data/types";
 import { categories } from "@/data/types";
 import { TourCard } from "@/components/tour-card";
+import { OPEN_FILTERS_EVENT } from "@/components/filter-tab";
 import { cn, formatPrice } from "@/lib/utils";
 
 type SortKey = "popular" | "price-asc" | "price-desc";
@@ -42,7 +43,40 @@ export function CatalogFilters({
   const [time, setTime] = useState<(typeof timeSlots)[number]["id"]>("all");
   const [maxPrice, setMaxPrice] = useState(5000);
   const [sort, setSort] = useState<SortKey>("popular");
-  const [mobileOpen, setMobileOpen] = useState(false);
+  // Боковая панель фильтров (мобильные): open + closing — как в меню сайта (header)
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  const closeFilters = () => {
+    setClosing(true);
+    setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, 300);
+  };
+
+  // Блокируем прокрутку фона, пока открыта панель (как в меню сайта)
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  // Открытие панели фильтров единой плавающей кнопкой «Фильтры» (см. filter-tab.tsx):
+  //  • мы уже в каталоге → кнопка шлёт событие OPEN_FILTERS_EVENT;
+  //  • пришли с главной по кнопке → она ставит сигнал sf:openFilters ДО перехода, открываем панель на входе.
+  useEffect(() => {
+    const openPanel = () => setOpen(true);
+    window.addEventListener(OPEN_FILTERS_EVENT, openPanel);
+    try {
+      if (sessionStorage.getItem("sf:openFilters") === "1") {
+        sessionStorage.removeItem("sf:openFilters");
+        setOpen(true);
+      }
+    } catch {}
+    return () => window.removeEventListener(OPEN_FILTERS_EVENT, openPanel);
+  }, []);
 
   const filtered = useMemo(() => {
     let list = tours.filter((t) => {
@@ -147,12 +181,6 @@ export function CatalogFilters({
                 <option value="price-desc">Сначала дороже</option>
               </select>
             </label>
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-4 py-2 text-sm font-medium text-ink lg:hidden"
-            >
-              <SlidersHorizontal className="h-4 w-4" /> Фильтры
-            </button>
           </div>
         </div>
 
@@ -173,21 +201,38 @@ export function CatalogFilters({
         )}
       </div>
 
-      {/* Мобильная панель фильтров */}
-      {mobileOpen && (
+      {/* Мобильная панель фильтров — выезжает слева направо (как меню сайта, зеркально).
+          Открывается единой плавающей кнопкой «Фильтры» (filter-tab.tsx) через событие/сигнал. */}
+      {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-bg p-6 pb-10">
-            <div className="mb-6 flex items-center justify-between">
+          <div
+            className={cn(
+              "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+              closing ? "opacity-0" : "opacity-100"
+            )}
+            onClick={closeFilters}
+          />
+          <div
+            className={cn(
+              "absolute left-0 top-0 flex h-full w-[82%] max-w-sm flex-col bg-bg p-6 shadow-float",
+              closing ? "animate-slide-out-left" : "animate-slide-in-left"
+            )}
+          >
+            <div className="flex items-center justify-between">
               <h3 className="font-display text-xl font-bold text-ink">Фильтры</h3>
-              <button onClick={() => setMobileOpen(false)} aria-label="Закрыть" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink">
+              <button
+                type="button"
+                onClick={closeFilters}
+                aria-label="Закрыть"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {filtersPanel}
+            <div className="mt-6 flex-1 overflow-y-auto">{filtersPanel}</div>
             <button
-              onClick={() => setMobileOpen(false)}
-              className="mt-8 h-12 w-full rounded-full bg-primary font-medium text-primary-fg"
+              onClick={closeFilters}
+              className="mt-6 h-12 w-full rounded-full bg-primary font-medium text-primary-fg"
             >
               Показать {filtered.length}
             </button>

@@ -8,6 +8,7 @@ import { SplashScreen } from "@/components/splash-screen";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { FilterTab } from "@/components/filter-tab";
 
 const inter = Inter({ subsets: ["latin", "cyrillic"], variable: "--font-sans", display: "swap" });
 const manrope = Manrope({ subsets: ["latin", "cyrillic"], variable: "--font-display", display: "swap" });
@@ -66,6 +67,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main>{children}</main>
           <Footer />
           <MobileNav />
+          {/* Единая плавающая кнопка «Фильтры» — одна на весь сайт, здесь (в layout) не пересоздаётся
+              при переходах, поэтому её положение не «прыгает» между главной и каталогом. */}
+          <FilterTab />
         </ThemeProvider>
       </body>
     </html>

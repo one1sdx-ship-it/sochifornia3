@@ -68,6 +68,14 @@ const config: Config = {
           "0%": { transform: "translateX(0)" },
           "100%": { transform: "translateX(100%)" },
         },
+        "slide-in-left": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(0)" },
+        },
+        "slide-out-left": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-100%)" },
+        },
         marquee: {
           "0%": { transform: "translateX(0)" },
           "100%": { transform: "translateX(-50%)" },
@@ -84,15 +92,22 @@ const config: Config = {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        "kaifun-pulse": {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.05)" },
+        },
       },
       animation: {
         "fade-up": "fade-up 0.6s cubic-bezier(0.16,1,0.3,1) both",
         "slide-in-right": "slide-in-right 0.3s ease both",
         "slide-out-right": "slide-out-right 0.3s ease forwards",
+        "slide-in-left": "slide-in-left 0.3s ease both",
+        "slide-out-left": "slide-out-left 0.3s ease forwards",
         marquee: "marquee 14s linear infinite",
         "slide-in-up": "slide-in-up 0.32s cubic-bezier(0.16,1,0.3,1) both",
         "slide-out-down": "slide-out-down 0.32s cubic-bezier(0.16,1,0.3,1) both",
         "fade-in": "fade-in 0.25s ease both",
+        "kaifun-pulse": "kaifun-pulse 1.2s ease-in-out infinite",
       },
     },
   },

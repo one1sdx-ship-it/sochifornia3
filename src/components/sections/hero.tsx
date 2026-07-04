@@ -1,6 +1,7 @@
 import { ChevronRight, ShieldCheck, Clock, HeartHandshake } from "lucide-react";
 import { site } from "@/data/site";
 import { Button } from "@/components/ui/button";
+import { TyphoonWord } from "@/components/typhoon-word";
 
 export function Hero() {
   return (
@@ -26,16 +27,16 @@ export function Hero() {
             {site.stats.years} лет · {site.stats.clients} счастливых туристов
           </span>
 
-          <h1 className="mt-6 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-            Откройте Сочи
-            <br />
-            <span className="bg-gradient-to-r from-white to-accent/90 bg-clip-text text-transparent">
-              с лучшими гидами
-            </span>
+          {/* Заголовок выровнен по ширине (justify + text-align-last: justify — тянется на всю
+              ширину контейнера). Размер увеличен через clamp. Между словами — двойной пробел
+              (word-spacing ≈ ширина второго пробела). Первое слово анимируется (см. TyphoonWord). */}
+          <h1 className="mt-6 whitespace-nowrap font-display text-[clamp(1.8rem,8vw,4.5rem)] font-bold leading-[1.1] tracking-tight text-justify [text-align-last:justify] [word-spacing:0.25em]">
+            <TyphoonWord /> эмоций в Сочи
           </h1>
 
           <p className="mt-6 max-w-xl text-lg text-white/90 sm:text-xl">
-            Авторские морские, горные и городские экскурсии.
+            Накроет волной{" "}
+            <span className="animate-subtle-shake font-medium text-[#5CC6E4]">твоих лучших впечатлений</span>
           </p>
 
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -57,8 +58,9 @@ export function Hero() {
 }
 
 function Trust({ icon: Icon, title, text }: { icon: typeof ShieldCheck; title: string; text: string }) {
+  // Полупрозрачная подложка бейджа: на мобильных заметно выше по вертикали (~+20%) — py-3.5; на sm+ py-4
   return (
-    <li className="flex items-start gap-3 rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
+    <li className="flex items-start gap-3 rounded-lg border border-white/15 bg-white/10 px-4 py-3.5 backdrop-blur-sm sm:py-4">
       <Icon className="h-6 w-6 shrink-0 text-accent" />
       <div>
         <p className="font-semibold">{title}</p>

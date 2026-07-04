@@ -5,19 +5,21 @@ import Image from "next/image";
 import { stopScroll, startScroll } from "@/components/smooth-scroll";
 import { cn } from "@/lib/utils";
 
-// Показываем один раз за сессию браузера (не при каждом внутреннем переходе по сайту)
-const SPLASH_SESSION_KEY = "sochifornia:splash-seen";
-const SHOW_MS = 1200;
+// Заставка показывается при каждой полной загрузке страницы и ВСЕГДА уходит плавно.
+// Гейт через sessionStorage убран намеренно: он давал «мгновенное» исчезновение при повторных
+// перезагрузках (когда ключ уже стоял). Компонент живёт в root-layout и при внутренних
+// клиентских переходах не перемонтируется, поэтому эффект и так отрабатывает один раз за загрузку.
+const SHOW_MS = 2000;
 const FADE_MS = 500;
 
 export function SplashScreen() {
-  const [visible, setVisible] = useState(false);
+  // Стартуем видимой: заставка попадает в SSR-разметку и перекрывает сайт с первого
+  // кадра, поэтому сайт не «мелькает» раньше вступительной страницы.
+  const [visible, setVisible] = useState(true);
   const [hiding, setHiding] = useState(false);
 
   useEffect(() => {
-    if (sessionStorage.getItem(SPLASH_SESSION_KEY)) return;
-    sessionStorage.setItem(SPLASH_SESSION_KEY, "1");
-    setVisible(true);
+    // Показали SHOW_MS — затем всегда плавно скрываем (см. эффект по [hiding])
     const t = setTimeout(() => setHiding(true), SHOW_MS);
     return () => clearTimeout(t);
   }, []);
@@ -42,7 +44,7 @@ export function SplashScreen() {
       onClick={() => setHiding(true)}
       aria-hidden="true"
       className={cn(
-        "fixed inset-0 z-[100] flex cursor-pointer flex-col items-center justify-center gap-6 bg-ink transition-opacity",
+        "fixed inset-0 z-[100] flex cursor-pointer flex-col items-center justify-center gap-6 bg-white transition-opacity",
         hiding ? "pointer-events-none opacity-0 duration-500 ease-in" : "opacity-100 duration-300 ease-out"
       )}
     >
@@ -50,12 +52,12 @@ export function SplashScreen() {
         <Image
           src="/LogoSochi.png"
           alt="Sochifornia Travel"
-          width={176}
-          height={176}
+          width={320}
+          height={320}
           priority
-          className="h-32 w-32 rounded-2xl object-contain sm:h-44 sm:w-44"
+          className="h-[13.6rem] w-[13.6rem] rounded-2xl object-contain sm:h-[18.7rem] sm:w-[18.7rem]"
         />
-        <span className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+        <span className="animate-splash-title font-display text-[2.25rem] font-bold tracking-tight text-primary sm:text-[2.8125rem]">
           Sochifornia Travel
         </span>
       </div>

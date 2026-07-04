@@ -14,7 +14,11 @@ export default function HomePage() {
     <>
       <Hero />
       <PartnersSection />
-      <PopularToursSection />
+      {/* Якорь для единой плавающей кнопки «Фильтры» (filter-tab.tsx): она видна на главной,
+          пока этот блок с экскурсиями в зоне видимости. */}
+      <div id="home-tours-anchor">
+        <PopularToursSection />
+      </div>
       <CategoriesSection />
       <WhyUsSection />
       <GallerySection />

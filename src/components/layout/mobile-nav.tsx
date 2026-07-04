@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ArrowUp, Compass, Images, MessageCircle, Phone, Star } from "lucide-react";
 import { site } from "@/data/site";
 import { cn } from "@/lib/utils";
+import { smoothScrollToTop } from "@/components/smooth-scroll";
 
 const items = [
   { label: "Каталог", href: "/tours", Icon: Compass },
@@ -47,14 +48,19 @@ export function MobileNav() {
   return (
     <>
       {/* Плавающие кнопки над нижней навигацией */}
-      <div className="fixed bottom-[164px] left-4 z-40 lg:hidden">
+      {/* Кнопка «Наверх»: как закладка «Фильтры» — торчит из-за левого края экрана (скругление только
+          справа, без левой рамки), опущена ниже (исходно 164 → 132). В скрытом виде уезжает за левый край. */}
+      <div className="fixed bottom-[132px] left-0 z-40 lg:hidden">
         <button
           type="button"
           aria-label="Наверх"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          onClick={smoothScrollToTop}
+          // Срабатываем и на pointerdown: во время инерции прокрутки (Lenis) обычный click
+          // «съедается» остановкой инерции — а по нажатию возврат наверх происходит сразу.
+          onPointerDown={smoothScrollToTop}
           className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-full border border-hairline bg-surface text-ink shadow-card transition-all duration-300",
-            showTop ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
+            "flex h-10 w-10 items-center justify-center rounded-r-md border border-l-0 border-hairline bg-surface text-ink shadow-card transition-all duration-300",
+            showTop ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-full opacity-0"
           )}
         >
           <ArrowUp className="h-5 w-5" />
