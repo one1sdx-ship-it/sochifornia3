@@ -1,10 +1,12 @@
-import { tours } from "@/data/tours";
+import { getPublishedTours } from "@/data/tours-db";
 import { SectionHeading } from "@/components/section-heading";
 import { TourCard } from "@/components/tour-card";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/reveal";
 
-export function PopularToursSection() {
+// Async server-компонент: берёт опубликованные экскурсии из БД.
+export async function PopularToursSection() {
+  const tours = await getPublishedTours();
   const popular = [...tours].sort((a, b) => b.reviewsCount - a.reviewsCount).slice(0, 6);
   return (
     <section className="container-wide py-section-sm sm:py-section">

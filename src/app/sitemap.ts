@@ -1,10 +1,11 @@
 import type { MetadataRoute } from "next";
 import { site } from "@/data/site";
-import { tours } from "@/data/tours";
+import { getPublishedSlugs } from "@/data/tours-db";
 import { blogPosts } from "@/data/content";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
+  const tourSlugs = await getPublishedSlugs();
 
   const staticRoutes = [
     "", "/tours", "/about", "/guides", "/reviews", "/faq", "/contacts", "/blog",
@@ -15,8 +16,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: path === "" ? 1 : 0.8,
   }));
 
-  const tourRoutes = tours.map((t) => ({
-    url: `${site.url}/tours/${t.slug}`,
+  const tourRoutes = tourSlugs.map((slug) => ({
+    url: `${site.url}/tours/${slug}`,
     lastModified: now,
     changeFrequency: "weekly" as const,
     priority: 0.9,

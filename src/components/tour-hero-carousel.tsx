@@ -1,26 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Maximize2 } from "lucide-react";
 import { GradientImage } from "@/components/gradient-image";
+import { Marquee } from "@/components/marquee";
 import { stopScroll, startScroll } from "@/components/smooth-scroll";
 import { cn } from "@/lib/utils";
 
-// Временно: 7 одинаковых фото (1 оригинал + 6 копий), пронумерованы 1..7
-const SLIDES = 7;
-
 export function TourHeroCarousel({
-  image,
+  images: imagesInput,
   title,
   children,
 }: {
-  image: string;
+  images: string[];
   title: string;
   children: React.ReactNode;
 }) {
-  const images = Array.from({ length: SLIDES }, () => image);
+  // Карусель героя = галерея тура (синхронно с карточкой и секцией «Фотографии»).
+  const images = imagesInput.length > 0 ? imagesInput : ["hero"];
+  const SLIDES = images.length;
   const [index, setIndex] = useState(0);
-  const activeThumb = useRef<HTMLButtonElement | null>(null);
   const activeThumbFs = useRef<HTMLButtonElement | null>(null);
 
   const startX = useRef(0);
@@ -45,8 +44,12 @@ export function TourHeroCarousel({
     }, 300);
   };
 
+  // Как только начали листать — кнопка «Полноэкранный просмотр» сворачивается до одной иконки.
+  const [fsCollapsed, setFsCollapsed] = useState(false);
+
   const flip = (dir: number) => {
     flashArrows();
+    setFsCollapsed(true);
     go(index + dir);
   };
 
@@ -107,7 +110,6 @@ export function TourHeroCarousel({
   }, [fullscreen, index]);
 
   useEffect(() => {
-    activeThumb.current?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     activeThumbFs.current?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [index]);
 
@@ -115,6 +117,12 @@ export function TourHeroCarousel({
     if (showPhoto) flashArrows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPhoto]);
+
+  // На основном фото стрелки видны сразу и мягко гаснут до 55% (как в карточке экскурсии/Каталоге)
+  useEffect(() => {
+    flashArrows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
@@ -129,8 +137,17 @@ export function TourHeroCarousel({
           const dy = e.changedTouches[0].clientY - startY.current;
           if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
             didSwipe.current = true;
-            go(index + (dx < 0 ? 1 : -1));
+            flip(dx < 0 ? 1 : -1);
           }
+        }}
+        onMouseEnter={() => {
+          if (arrowHideTimer.current) clearTimeout(arrowHideTimer.current);
+          setArrowsFast(true);
+          setArrowsShown(true);
+        }}
+        onMouseLeave={() => {
+          setArrowsFast(true);
+          setArrowsShown(false);
         }}
       >
         {/* Основное фото — клик открывает полноэкранный просмотр */}
@@ -153,33 +170,56 @@ export function TourHeroCarousel({
           />
         </button>
 
+        {/* Кнопка полноэкранного просмотра — снизу справа внутри фото (крупная, ×1.5). Пока фото не
+            листали — «иконка + надпись»; как только начали листать, надпись плавно уезжает вправо и
+            гаснет, а подложка сжимается до одной иконки со стрелками (минималистично). */}
+        <button
+          type="button"
+          aria-label="Полноэкранный просмотр"
+          onClick={() => openFullscreen(index)}
+          className={cn(
+            "absolute bottom-4 right-4 z-20 inline-flex items-center overflow-hidden rounded-full bg-black/40 text-white backdrop-blur-sm transition-all duration-300 ease-out hover:bg-black/60",
+            fsCollapsed ? "p-2.5" : "py-[9px] pl-[18px] pr-[14px]"
+          )}
+        >
+          <span
+            className={cn(
+              "overflow-hidden whitespace-nowrap text-lg font-medium leading-none transition-all duration-300 ease-out",
+              fsCollapsed ? "max-w-0 translate-x-3 opacity-0" : "mr-2 max-w-[280px] translate-x-0 opacity-100"
+            )}
+          >
+            Полноэкранный просмотр
+          </span>
+          <Maximize2 className="h-6 w-6 shrink-0" />
+        </button>
+
         {/* Контент поверх фото (хлебные крошки, заголовок); pointer-events-none — чтобы клик по
             «пустым» местам фото доходил до кнопки полноэкранного просмотра под ним */}
         <div className="pointer-events-none relative z-10">{children}</div>
       </section>
 
-      {/* Лента-превью — прилипает под шапкой при прокрутке вниз, чтобы фото были доступны в любой момент */}
-      <div className="sticky top-24 z-40 border-b border-hairline bg-bg">
-        <div className="flex gap-2 overflow-x-auto px-5 py-3 sm:px-8 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Лента-превью — прилипает под шапкой; медленно едет справа налево (rAF-marquee, как в
+          карточке экскурсии в разделе «Каталог»). Ленту можно зажать и прокрутить вручную; тап
+          открывает полноэкранный просмотр. Активное фото подсвечивается синей рамкой (.mq-selected). */}
+      <div id="tour-photostrip" className="sticky top-24 z-40 border-b border-hairline bg-bg">
+        <Marquee
+          draggable
+          highlightCenter
+          selectedIndex={index}
+          onSelect={(i) => openFullscreen(i)}
+          className="px-5 py-3 sm:px-8 [mask-image:linear-gradient(to_right,transparent,black_16px,black_calc(100%-16px),transparent)]"
+          copyClassName="gap-2 pr-2"
+          pxPerSecond={15.68}
+        >
           {images.map((img, i) => (
-            <button
+            <GradientImage
               key={i}
-              ref={i === index ? activeThumb : null}
-              type="button"
-              aria-label={`Фото ${i + 1}`}
-              aria-current={i === index}
-              onClick={() => openFullscreen(i)}
-              className={cn(
-                "relative h-16 w-[86px] shrink-0 overflow-hidden rounded-md transition sm:h-20 sm:w-[101px]",
-                i === index
-                  ? "ring-2 ring-primary ring-offset-2 ring-offset-bg"
-                  : "opacity-55 hover:opacity-100"
-              )}
-            >
-              <GradientImage id={img} className="h-full w-full" />
-            </button>
+              id={img}
+              className="h-16 w-[86px] shrink-0 rounded-md sm:h-20 sm:w-[101px]"
+              label={`${title} — фото ${i + 1}`}
+            />
           ))}
-        </div>
+        </Marquee>
       </div>
 
       {/* Полноэкранный просмотр фотографий */}

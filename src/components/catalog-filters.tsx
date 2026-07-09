@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { Tour, TourCategory } from "@/data/types";
 import { categories } from "@/data/types";
@@ -46,6 +46,15 @@ export function CatalogFilters({
   // Боковая панель фильтров (мобильные): open + closing — как в меню сайта (header)
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  // Момент открытия панели. Быстрый тап по плавающей кнопке открывает панель на pointerdown, а
+  // следом «click» того же тапа попадает по затемнению и тут же её закрывал — из-за этого короткое
+  // нажатие «не срабатывало», а срабатывало только долгое (у него закрывающего клика нет). Гасим
+  // закрытие по затемнению в первые мгновения после открытия.
+  const openedAtRef = useRef(0);
+  const markOpened = () => {
+    openedAtRef.current = Date.now();
+    setOpen(true);
+  };
 
   const closeFilters = () => {
     setClosing(true);
@@ -67,12 +76,12 @@ export function CatalogFilters({
   //  • мы уже в каталоге → кнопка шлёт событие OPEN_FILTERS_EVENT;
   //  • пришли с главной по кнопке → она ставит сигнал sf:openFilters ДО перехода, открываем панель на входе.
   useEffect(() => {
-    const openPanel = () => setOpen(true);
+    const openPanel = () => markOpened();
     window.addEventListener(OPEN_FILTERS_EVENT, openPanel);
     try {
       if (sessionStorage.getItem("sf:openFilters") === "1") {
         sessionStorage.removeItem("sf:openFilters");
-        setOpen(true);
+        markOpened();
       }
     } catch {}
     return () => window.removeEventListener(OPEN_FILTERS_EVENT, openPanel);
@@ -210,7 +219,11 @@ export function CatalogFilters({
               "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
               closing ? "opacity-0" : "opacity-100"
             )}
-            onClick={closeFilters}
+            onClick={() => {
+              // Игнорируем «click», прилетевший тем же тапом, что и открыл панель (короткое нажатие).
+              if (Date.now() - openedAtRef.current < 400) return;
+              closeFilters();
+            }}
           />
           <div
             className={cn(

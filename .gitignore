@@ -26,8 +26,14 @@ yarn-error.log*
 .env
 .env*.local
 
+# локальные загрузки фото (dev-режим без Vercel Blob) — на проде используется Blob
+/public/uploads
+
 # vercel
 .vercel
+
+# локальная конфигурация Claude Code (не в публичный репозиторий)
+/.claude/
 
 # typescript
 *.tsbuildinfo

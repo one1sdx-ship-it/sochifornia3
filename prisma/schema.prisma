@@ -1,0 +1,256 @@
+// Схема базы данных sochifornia (Prisma + PostgreSQL).
+// Модель контента экскурсий + пользователи/роли + сессии + журнал изменений.
+// Комментарии на русском по договорённости проекта.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Пользователи, роли, аутентификация (Auth.js Prisma adapter)
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN // полный доступ
+  EDITOR // может только создавать черновики, чужое не трогает
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  passwordHash  String? // для входа по email+паролю (null у Google-аккаунтов)
+  role          Role      @default(EDITOR)
+  sessionVersion Int      @default(0) // ++ при «выходе со всех устройств» — старые токены становятся невалидны
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts Account[]
+  sessions Session[] // хранение сессий в БД => «выход со всех устройств» = удалить все
+
+  // Связи для журнала и авторства
+  createdTours Tour[]     @relation("TourCreatedBy")
+  updatedTours Tour[]     @relation("TourUpdatedBy")
+  auditLogs    AuditLog[]
+}
+
+// Таблицы адаптера Auth.js (для входа через Google и хранения сессий)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Экскурсии (контент)
+// ─────────────────────────────────────────────────────────────
+
+enum TourStatus {
+  DRAFT // черновик, на сайте не виден
+  PUBLISHED // опубликован
+  ARCHIVED // в архиве (раздел «Архив»)
+}
+
+enum TourCategory {
+  mountains
+  sea
+  city
+  nature
+  kids
+  vip
+}
+
+enum TourFormat {
+  group
+  individual
+}
+
+model Tour {
+  id      String       @id @default(cuid())
+  slug    String       @unique
+  status  TourStatus   @default(DRAFT)
+  title   String
+  excerpt String       @default("")
+  category TourCategory @default(city)
+  format  TourFormat   @default(group)
+
+  // Стоимость
+  adultPrice Int    @default(0) // цена за взрослого, ₽/чел
+  childPrice Int    @default(0) // цена за ребёнка, ₽/чел
+  priceSuffix String @default("₽/чел") // приписка/валюта
+
+  // Прочие параметры карточки
+  durationHours Int      @default(0)
+  startTime     String   @default("")
+  rating        Float    @default(5)
+  reviewsCount  Int      @default(0)
+  seasonal      Boolean  @default(false)
+  vip           Boolean  @default(false)
+  image         String   @default("") // обложка (id-градиент или url)
+
+  sortOrder Int @default(0) // порядок в списках
+
+  // Аудит/авторство
+  createdById String?
+  updatedById String?
+  createdBy   User?   @relation("TourCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   User?   @relation("TourUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Вложенный контент
+  gallery      TourImage[] // карусель фото (одна на страницу и блок — синхронно)
+  blocks       TourBlock[] // 4 блока под каруселью (иконка + заголовок)
+  program      ProgramPoint[] // «Программа экскурсии» (точки: время/заголовок/описание)
+  listItems    TourListItem[] // «что входит / не входит / что взять»
+  extraTariffs ExtraTariff[] // доп. тарифы (пенсионеры, группа и т.п.)
+
+  auditLogs AuditLog[]
+
+  @@index([status])
+  @@index([category])
+}
+
+// Фото галереи/карусели (порядок задаёт карусель и блок синхронно)
+model TourImage {
+  id     String @id @default(cuid())
+  tourId String
+  tour   Tour   @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  url    String
+  alt    String @default("")
+  order  Int    @default(0)
+
+  @@index([tourId])
+}
+
+enum IconType {
+  LUCIDE // иконка из набора lucide-react (по имени)
+  CUSTOM // загруженный свой файл (url)
+}
+
+// 4 блока под каруселью: иконка + заголовок (только заголовок, без подписи)
+model TourBlock {
+  id       String   @id @default(cuid())
+  tourId   String
+  tour     Tour     @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  icon     String   @default("") // имя lucide-иконки ИЛИ url своего файла
+  iconType IconType @default(LUCIDE)
+  title    String   @default("")
+  order    Int      @default(0)
+
+  @@index([tourId])
+}
+
+// Точка «Программы экскурсии»
+model ProgramPoint {
+  id     String @id @default(cuid())
+  tourId String
+  tour   Tour   @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  time   String @default("") // время пункта
+  title  String @default("") // заголовок пункта
+  text   String @default("") // описание пункта
+  order  Int    @default(0)
+
+  @@index([tourId])
+}
+
+enum ListKind {
+  INCLUDED // что входит
+  EXCLUDED // не входит
+  BRING // что взять с собой
+}
+
+// Пункт списков «что входит / не входит / что взять»
+model TourListItem {
+  id       String   @id @default(cuid())
+  tourId   String
+  tour     Tour     @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  kind     ListKind
+  text     String   @default("")
+  icon     String? // для «что взять» — своя иконка слева (иначе галочка по умолчанию)
+  iconType IconType @default(LUCIDE)
+  order    Int      @default(0)
+
+  @@index([tourId, kind])
+}
+
+// Доп. тарифы (пенсионеры, группа и т.п.)
+model ExtraTariff {
+  id     String @id @default(cuid())
+  tourId String
+  tour   Tour   @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  label  String @default("")
+  price  Int    @default(0)
+  order  Int    @default(0)
+
+  @@index([tourId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Журнал изменений (кто / что / когда)
+// ─────────────────────────────────────────────────────────────
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  PUBLISH
+  ARCHIVE
+  RESTORE
+  COPY
+  DELETE
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  action    AuditAction
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tourId    String?
+  tour      Tour?       @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  tourTitle String      @default("") // копия названия на момент действия (переживает удаление)
+  summary   String      @default("") // человекочитаемое описание
+  meta      Json? // детали (какие поля менялись и т.п.) — задел на откат версий
+  createdAt DateTime    @default(now())
+
+  @@index([tourId])
+  @@index([userId])
+  @@index([createdAt])
+}

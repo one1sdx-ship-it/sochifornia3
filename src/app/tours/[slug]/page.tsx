@@ -4,7 +4,10 @@ import Link from "next/link";
 import {
   Check, X as XIcon, Clock, Users, Star, MapPin, Backpack, ChevronRight, Calendar,
 } from "lucide-react";
-import { tours, getTour } from "@/data/tours";
+import { getPublishedTours, getPublishedTourBySlug, getPublishedSlugs, getTourEntity, toLegacyTour, type TourEntity } from "@/data/tours-db";
+import { getCurrentUser, canEditTour } from "@/lib/session";
+import { DynamicIcon } from "@/components/dynamic-icon";
+import { TourEditLauncher, type EditorTour } from "@/components/admin/tour-editor/tour-edit-launcher";
 import { reviews, faqs, guides } from "@/data/content";
 import { categories } from "@/data/types";
 import { site } from "@/data/site";
@@ -17,10 +20,38 @@ import { FaqAccordion } from "@/components/faq-accordion";
 import { TourCard } from "@/components/tour-card";
 import { GuideCard } from "@/components/guide-card";
 import { StickyBookingBar } from "@/components/sticky-booking-bar";
+import { LeadOverlay } from "@/components/lead-overlay";
 import { Reveal } from "@/components/reveal";
 
-export function generateStaticParams() {
-  return tours.map((t) => ({ slug: t.slug }));
+// Собираем данные для inline-редактора (сериализуемые, без id вложенных записей не нужны).
+function buildEditorTour(t: TourEntity): EditorTour {
+  const list = (kind: "INCLUDED" | "EXCLUDED" | "BRING") =>
+    t.listItems.filter((i) => i.kind === kind).map((i) => ({ text: i.text, icon: i.icon, iconType: i.iconType }));
+  return {
+    id: t.id,
+    title: t.title,
+    excerpt: t.excerpt,
+    adultPrice: t.adultPrice,
+    childPrice: t.childPrice,
+    priceSuffix: t.priceSuffix,
+    gallery: t.gallery.map((g) => ({ url: g.url, alt: g.alt })),
+    blocks: t.blocks.map((b) => ({ icon: b.icon, iconType: b.iconType, title: b.title })),
+    program: t.program.map((p) => ({ time: p.time, title: p.title, text: p.text })),
+    included: list("INCLUDED"),
+    excluded: list("EXCLUDED"),
+    bring: list("BRING"),
+    tariffs: t.extraTariffs.map((x) => ({ label: x.label, price: x.price })),
+  };
+}
+
+// Обновляем данные из БД не чаще раза в минуту (ISR).
+export const revalidate = 60;
+// Разрешаем показывать туры, которых не было на момент сборки (без пересборки).
+export const dynamicParams = true;
+
+export async function generateStaticParams() {
+  const slugs = await getPublishedSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -29,7 +60,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const tour = getTour(slug);
+  const tour = await getPublishedTourBySlug(slug);
   if (!tour) return { title: "Экскурсия не найдена" };
   return {
     title: tour.title,
@@ -44,13 +75,21 @@ export default async function TourPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tour = getTour(slug);
-  if (!tour) notFound();
+  const entity = await getTourEntity(slug);
+  if (!entity) notFound();
 
+  // Авторизованный редактор видит тур любого статуса; посторонние — только опубликованный.
+  const currentUser = await getCurrentUser();
+  const canEdit = currentUser ? canEditTour(currentUser, entity) : false;
+  if (entity.status !== "PUBLISHED" && !canEdit) notFound();
+
+  const tour = toLegacyTour(entity);
+  const allTours = await getPublishedTours();
   const category = categories.find((c) => c.id === tour.category);
-  const related = tours.filter((t) => t.category === tour.category && t.slug !== tour.slug).slice(0, 3);
-  const relatedFallback = related.length > 0 ? related : tours.filter((t) => t.slug !== tour.slug).slice(0, 3);
-  const guide = guides[tours.indexOf(tour) % guides.length];
+  const related = allTours.filter((t) => t.category === tour.category && t.slug !== tour.slug).slice(0, 3);
+  const relatedFallback = related.length > 0 ? related : allTours.filter((t) => t.slug !== tour.slug).slice(0, 3);
+  const guideIndex = allTours.findIndex((t) => t.slug === tour.slug);
+  const guide = guides[(guideIndex < 0 ? 0 : guideIndex) % guides.length];
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -74,9 +113,18 @@ export default async function TourPage({
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
+      {/* Плашка для редактора: тур не опубликован и виден только ему */}
+      {canEdit && entity.status !== "PUBLISHED" && (
+        <div className="bg-gold px-4 py-2 text-center text-sm font-medium text-black/80">
+          {entity.status === "DRAFT" ? "Черновик — виден только вам" : "В архиве — виден только вам"}
+        </div>
+      )}
+
       {/* HERO */}
-      <TourHeroCarousel image={tour.image} title={tour.title}>
-        <div className="container-wide relative flex min-h-[58vh] flex-col justify-end py-12 text-white sm:min-h-[64vh]">
+      <TourHeroCarousel images={tour.gallery.length > 0 ? tour.gallery : [tour.image]} title={tour.title}>
+        {/* pb увеличен: плашка «Полноэкранный просмотр» (снизу справа) крупная — резервируем место,
+            чтобы строка с рейтингом/часами/стартом была НАД плашкой, а не под ней. */}
+        <div className="container-wide relative flex min-h-[58vh] flex-col justify-end pb-24 pt-12 text-white sm:min-h-[64vh]">
           <nav className="pointer-events-auto mb-auto pt-4 text-sm text-white/80" aria-label="Хлебные крошки">
             <ol className="flex flex-wrap items-center gap-1.5">
               <li><Link href="/" className="hover:text-white">Главная</Link></li>
@@ -114,10 +162,10 @@ export default async function TourPage({
           {/* Преимущества */}
           <Reveal>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {tour.highlights.map((h) => (
-                <div key={h} className="rounded-lg border border-hairline bg-surface p-4">
-                  <Check className="h-5 w-5 text-primary" />
-                  <p className="mt-2 text-sm font-medium text-ink">{h}</p>
+              {entity.blocks.map((b) => (
+                <div key={b.id} className="rounded-lg border border-hairline bg-surface p-4">
+                  <DynamicIcon name={b.icon} iconType={b.iconType} className="h-5 w-5 text-primary" />
+                  <p className="mt-2 text-sm font-medium text-ink">{b.title}</p>
                 </div>
               ))}
             </div>
@@ -182,9 +230,9 @@ export default async function TourPage({
               <Backpack className="h-7 w-7 text-primary" /> Что взять с собой
             </h2>
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-              {tour.bring.map((item) => (
-                <li key={item} className="flex items-start gap-2.5 rounded-lg bg-surface-2 px-4 py-3 text-sm text-body">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> {item}
+              {entity.listItems.filter((i) => i.kind === "BRING").map((it) => (
+                <li key={it.id} className="flex items-start gap-2.5 rounded-lg bg-surface-2 px-4 py-3 text-sm text-body">
+                  <DynamicIcon name={it.icon ?? "Check"} iconType={it.iconType} className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> {it.text}
                 </li>
               ))}
             </ul>
@@ -230,7 +278,11 @@ export default async function TourPage({
                 </span>
               </div>
             </div>
-            <LeadForm tourTitle={tour.title} compact />
+            {/* id на самой форме (а не на #tour-lead с карточкой цены выше) — чтобы полноэкранная
+                панель могла подвести эту форму ровно под свою одноимённую форму. */}
+            <div id="tour-lead-form">
+              <LeadForm tourTitle={tour.title} compact />
+            </div>
           </div>
         </aside>
       </section>
@@ -258,6 +310,10 @@ export default async function TourPage({
       </section>
 
       <StickyBookingBar price={tour.price} />
+      <LeadOverlay tourTitle={tour.title} />
+
+      {/* Mobile-first inline-редактор — только для тех, кому можно править этот тур */}
+      {canEdit && <TourEditLauncher tour={buildEditorTour(entity)} />}
     </>
   );
 }

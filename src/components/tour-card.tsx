@@ -10,14 +10,15 @@ import { PhotoSwiper } from "@/components/photo-swiper";
 import { Marquee } from "@/components/marquee";
 import { cn, formatPrice } from "@/lib/utils";
 
-// Временно: 7 одинаковых фото (1 оригинал + 6 копий)
+// Заглушка на случай тура без галереи: 7 одинаковых фото
 const SLIDES = 7;
 
 // «Мобильная версия» = ширина меньше lg (как и нижняя навигация lg:hidden)
 const MOBILE_MQ = "(max-width: 1023px)";
 
 export function TourCard({ tour }: { tour: Tour }) {
-  const images = Array.from({ length: SLIDES }, () => tour.image);
+  // Карусель карточки = галерея тура (синхронно со страницей). Пусто — заглушка.
+  const images = tour.gallery.length > 0 ? tour.gallery : Array.from({ length: SLIDES }, () => tour.image);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
   // Индекс активного фото: общий для свайпера главного фото и подсветки в ленте-карусели.
@@ -64,6 +65,16 @@ export function TourCard({ tour }: { tour: Tour }) {
     const t = setTimeout(() => setCtaBlue(true), 2000);
     return () => clearTimeout(t);
   }, [centered]);
+
+  // «Выбрать»: сразу уходим на страницу экскурсии и просим её открыть панель заявки.
+  // Флаг читает [[lead-overlay]] при монтировании. Переход клиентский (маршрут уже предзагружен
+  // растянутой ссылкой карточки), поэтому по ощущению — так же быстро, как «Оставить заявку».
+  const handleSelect = () => {
+    try {
+      sessionStorage.setItem("sf:open-lead", "1");
+    } catch {}
+    router.push(`/tours/${tour.slug}`);
+  };
 
   // тезисы для чипов-пилюль: сортируем по длине — аккуратная «лесенка» при выравнивании вправо
   const highlights = [...tour.highlights].sort((a, b) => b.length - a.length);
@@ -181,16 +192,33 @@ export function TourCard({ tour }: { tour: Tour }) {
             <p className="leading-tight">
               <span className="text-xs text-muted">от </span>
               <span className="font-display text-xl font-bold text-ink">{formatPrice(tour.price)}</span>
-              <span className="text-xs text-muted"> за человека</span>
+              <span className="text-xs text-muted">/чел</span>
             </p>
-            {/* «Подробнее»: волнообразная пульсация; синеет при ховере (десктоп) и через 2с в центре экрана (мобайл) */}
-            <span
-              className={cn(
-                "animate-cta-breathe shrink-0 rounded-md bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-fg",
-                ctaBlue && "bg-primary text-primary-fg"
-              )}
-            >
-              Подробнее
+            {/* Двойная кнопка «Смотреть | Выбрать»: пульсирует целиком (как раньше «Подробнее»).
+                Правая часть «Выбрать» синеет при ховере (десктоп) и через 2с в центре экрана (мобайл).
+                relative z-10 — на КОНТЕЙНЕРЕ: пульсация (will-change: transform) уже создаёт свой
+                stacking context, поэтому z-10 на вложенной кнопке не срабатывал — клик проваливался
+                на растянутую ссылку карточки (z-0). Поднимаем над ссылкой весь блок, а обе половины
+                делаем самостоятельными кликабельными элементами. */}
+            <span className="animate-cta-breathe relative z-10 inline-flex shrink-0 overflow-hidden rounded-md text-sm font-medium">
+              {/* «Смотреть» — обычный просмотр экскурсии. */}
+              <Link
+                href={`/tours/${tour.slug}`}
+                className="bg-primary/10 px-3.5 py-2 text-primary active:scale-95"
+              >
+                Смотреть
+              </Link>
+              {/* «Выбрать» — переход внутрь + мгновенное открытие полноэкранной панели заявки. */}
+              <button
+                type="button"
+                onClick={handleSelect}
+                className={cn(
+                  "border-l border-primary/20 bg-primary/10 px-3.5 py-2 text-primary transition-colors duration-300 active:scale-95 group-hover:bg-primary group-hover:text-primary-fg",
+                  ctaBlue && "bg-primary text-primary-fg"
+                )}
+              >
+                Выбрать
+              </button>
             </span>
           </div>
         </div>

@@ -9,6 +9,9 @@ import { ReviewsSection } from "@/components/sections/reviews-section";
 import { FaqSection } from "@/components/sections/faq-section";
 import { LeadSection } from "@/components/sections/lead-section";
 
+// Обновляем данные из БД не чаще раза в минуту (ISR).
+export const revalidate = 60;
+
 export default function HomePage() {
   return (
     <>

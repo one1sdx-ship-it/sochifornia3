@@ -24,6 +24,13 @@ export function smoothScrollToTop() {
   }
 }
 
+// Прокрутка к абсолютной позиции Y (синхронно с Lenis — владельцем скролла).
+// immediate=true — мгновенно (напр. под открывающейся панелью заявки прокрутки не видно).
+export function scrollToY(y: number, immediate = false) {
+  if (lenisInstance) lenisInstance.scrollTo(y, immediate ? { immediate: true } : { force: true });
+  else window.scrollTo(0, y);
+}
+
 // Прерываемая кастомная прокрутка: анимируем от ТЕКУЩЕЙ позиции скролла собственным rAF.
 // Так нет рывка/проскока, который давал Lenis.scrollTo (его внутренняя позиция на тач-скролле
 // расходится с реальной, из-за чего анимация «прыгала» в начале).
@@ -66,16 +73,29 @@ export function scrollElementToCenter(el: HTMLElement | null, duration = 1200) {
   centerRAF = requestAnimationFrame(step);
 }
 
-// Остановить/возобновить прокрутку (полноэкранный просмотр фото и т.п.):
+// Остановить/возобновить прокрутку (полноэкранный просмотр фото, панель заявки и т.п.):
 // одного overflow:hidden недостаточно, т.к. Lenis сам крутит window.scrollTo по wheel/touch.
+//
+// Замки́ считаются: разные компоненты могут блокировать прокрутку независимо и одновременно
+// (напр. поверх открытой панели заявки открыли просмотр фото). Разблокируем только когда сняты
+// ВСЕ замки́ — иначе закрытие одного разблокировало бы страницу под ещё открытым другим.
+let scrollLocks = 0;
+
 export function stopScroll() {
-  lenisInstance?.stop();
-  document.body.style.overflow = "hidden";
+  scrollLocks++;
+  if (scrollLocks === 1) {
+    lenisInstance?.stop();
+    document.body.style.overflow = "hidden";
+  }
 }
 
 export function startScroll() {
-  lenisInstance?.start();
-  document.body.style.overflow = "";
+  if (scrollLocks === 0) return;
+  scrollLocks--;
+  if (scrollLocks === 0) {
+    lenisInstance?.start();
+    document.body.style.overflow = "";
+  }
 }
 
 export const SCROLL_TOP_EVENT = "app:scrolltop";
@@ -141,6 +161,16 @@ export function SmoothScroll() {
       }
       return;
     }
+    // Навигация ради открытия панели заявки (кнопка «Выбрать» из [[tour-card]]): НЕ прыгаем
+    // наверх — [[lead-overlay]] сам спозиционирует скролл так, чтобы основная форма встала под
+    // формой оверлея. Иначе этот scrollToTop перебил бы его scrollToY, и панель открывалась бы
+    // над началом страницы. Флаг читаем синхронно (до rAF): rAF оверлея, снимающий флаг, ещё
+    // не запускался, поэтому гонки нет — решение принимаем раньше, чем флаг успеют снять.
+    let openingLead = false;
+    try {
+      openingLead = sessionStorage.getItem("sf:open-lead") === "1";
+    } catch {}
+    if (openingLead) return;
     requestAnimationFrame(() => scrollToTop());
   }, [pathname]);
 

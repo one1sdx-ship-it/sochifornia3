@@ -4,9 +4,12 @@ import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useLeadData, setLeadField } from "@/components/lead-store";
 
-// Форма заявки. Поля: имя, телефон, кол-во человек + скрытое название экскурсии
-// (передаётся через prop tourTitle со страницы экскурсии — синхронизация по ТЗ).
+// Форма заявки. Поля: имя, телефон, кол-во человек + скрытое название экскурсии.
+// Значения берутся из общего хранилища [[lead-store]] — основная и полноэкранная панели
+// заявки [[lead-overlay]] всегда синхронны, а введённое сохраняется в localStorage при каждом
+// символе. compact — одна колонка (узкая колонка / оверлей).
 export function LeadForm({
   tourTitle,
   className,
@@ -17,6 +20,7 @@ export function LeadForm({
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "done">("idle");
+  const data = useLeadData();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,11 +56,34 @@ export function LeadForm({
       )}
       <input type="hidden" name="tour" value={tourTitle ?? "Общая заявка"} />
       <div className={cn("grid gap-4", !compact && "sm:grid-cols-2")}>
-        <Field label="Ваше имя" name="name" placeholder="Как к вам обращаться" required />
-        <Field label="Телефон" name="phone" type="tel" placeholder="+7 (___) ___-__-__" required />
+        <Field
+          label="Ваше имя"
+          name="name"
+          placeholder="Как к вам обращаться"
+          required
+          value={data.name}
+          onChange={(v) => setLeadField("name", v)}
+        />
+        <Field
+          label="Телефон"
+          name="phone"
+          type="tel"
+          placeholder="+7 (___) ___-__-__"
+          required
+          value={data.phone}
+          onChange={(v) => setLeadField("phone", v)}
+        />
       </div>
       <div className="mt-4">
-        <Field label="Количество человек" name="people" type="number" placeholder="2" min={1} defaultValue={2} />
+        <Field
+          label="Количество человек"
+          name="people"
+          type="number"
+          placeholder="2"
+          min={1}
+          value={data.people}
+          onChange={(v) => setLeadField("people", v)}
+        />
       </div>
       <Button type="submit" size="lg" className="mt-6 w-full">
         {status === "loading" ? (
@@ -81,7 +108,8 @@ function Field({
   placeholder,
   required,
   min,
-  defaultValue,
+  value,
+  onChange,
 }: {
   label: string;
   name: string;
@@ -89,7 +117,8 @@ function Field({
   placeholder?: string;
   required?: boolean;
   min?: number;
-  defaultValue?: number;
+  value: string;
+  onChange: (value: string) => void;
 }) {
   return (
     <label className="block">
@@ -100,7 +129,8 @@ function Field({
         placeholder={placeholder}
         required={required}
         min={min}
-        defaultValue={defaultValue}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         className="h-12 w-full rounded-md border border-hairline bg-bg px-4 text-ink outline-none transition-colors placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
       />
     </label>

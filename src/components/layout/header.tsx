@@ -8,6 +8,7 @@ import { nav, site } from "@/data/site";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { SCROLL_TOP_EVENT } from "@/components/smooth-scroll";
+import { CALLBACK_CLOSE_EVENT } from "@/components/callback-modal";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -50,7 +51,11 @@ export function Header() {
           href="/"
           className="flex items-center gap-2"
           aria-label={site.name}
-          onClick={() => window.dispatchEvent(new Event(SCROLL_TOP_EVENT))}
+          onClick={() => {
+            window.dispatchEvent(new Event(SCROLL_TOP_EVENT));
+            // Если открыта панель «Перезвоните мне» — закрываем её сразу.
+            window.dispatchEvent(new Event(CALLBACK_CLOSE_EVENT));
+          }}
         >
           <Logo />
         </Link>

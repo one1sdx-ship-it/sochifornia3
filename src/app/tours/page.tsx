@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { tours } from "@/data/tours";
+import { getPublishedTours } from "@/data/tours-db";
 import type { TourCategory } from "@/data/types";
 import { PageHeader } from "@/components/page-header";
 import { CatalogFilters } from "@/components/catalog-filters";
@@ -9,6 +9,9 @@ export const metadata: Metadata = {
   description: "Все экскурсии Sochifornia Travel: морские, горные, городские и природные маршруты. Фильтры по цене, типу и времени. Цены от 1000 ₽.",
 };
 
+// Обновляем данные из БД не чаще раза в минуту (ISR).
+export const revalidate = 60;
+
 export default async function ToursPage({
   searchParams,
 }: {
@@ -16,6 +19,7 @@ export default async function ToursPage({
 }) {
   const params = await searchParams;
   const category = params.category as TourCategory | undefined;
+  const tours = await getPublishedTours();
 
   return (
     <>

@@ -208,3 +208,224 @@
   transform-origin: center;
   will-change: transform, opacity;
 }
+
+/* «Моргание» зелёным у кнопки «Подтвердить обратный звонок» в панели обратного звонка
+   [[callback-modal]]. Включается, как только введён телефон, — подталкивает клиента завершить
+   заявку. Пульсирует зелёное свечение (расходящееся кольцо) + лёгкая яркость.
+   Отключается автоматически глобальным prefers-reduced-motion. */
+@keyframes cb-blink {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--success) / 0.5);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgb(var(--success) / 0);
+    filter: brightness(1.12);
+  }
+}
+.animate-cb-blink {
+  animation: cb-blink 1.1s ease-in-out infinite;
+  will-change: box-shadow, filter;
+}
+
+/* Аккуратная вибрация «+7» внутри поля телефона [[callback-modal]] — лёгкое покачивание
+   вверх-вниз (малая амплитуда, мягкий цикл). Отключается глобальным prefers-reduced-motion. */
+@keyframes cb-plus7 {
+  0%,
+  100% {
+    transform: translateY(-1.5px);
+  }
+  50% {
+    transform: translateY(1.5px);
+  }
+}
+.animate-cb-plus7 {
+  display: inline-block;
+  animation: cb-plus7 1.3s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Пока телефон не введён, заголовок «Когда вам удобно получить консультацию?» медленно
+   перетекает в зелёную подпись «НЕ обязательно» и обратно — мягкая подсказка, что указывать
+   время/день консультации не обязательно. Два наложенных текста меняются в противофазе; каждое
+   состояние держится ~⅖ цикла, между ними — плавный кросс-фейд. reduced-motion отключает (текст
+   «НЕ обязательно» при этом остаётся скрытым за счёт базового opacity:0 в разметке). */
+@keyframes cb-consult-head {
+  0%,
+  15% {
+    opacity: 1;
+  }
+  30%,
+  85% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes cb-consult-opt {
+  0%,
+  35% {
+    opacity: 0;
+  }
+  50%,
+  65% {
+    opacity: 1;
+  }
+  80%,
+  100% {
+    opacity: 0;
+  }
+}
+/* «Пульсация» текста «НЕ обязательно» во время появления — мягко привлекаем внимание.
+   ВАЖНО: пульсируем ТОЛЬКО свечением (text-shadow), без transform/scale. Тень — чисто
+   «красочный» эффект: она не влияет ни на раскладку, ни на область прокрутки, поэтому заголовок
+   и кнопки ниже физически не могут сдвигаться (scale же на доли пикселя менял высоту контента,
+   и вертикальное центрирование дёргалось «влезает ↔ не влезает»). */
+@keyframes cb-consult-pulse {
+  0%,
+  100% {
+    text-shadow: 0 0 0 rgb(var(--success) / 0);
+  }
+  50% {
+    text-shadow: 0 0 12px rgb(var(--success) / 0.85);
+  }
+}
+.animate-cb-consult-head {
+  animation: cb-consult-head 10s ease-in-out infinite;
+}
+.animate-cb-consult-opt {
+  animation:
+    cb-consult-opt 10s ease-in-out infinite,
+    cb-consult-pulse 1.1s ease-in-out infinite;
+  will-change: opacity;
+}
+
+/* Пульсация синей обводки кнопки «Перезвоните мне» в каталоге, пока она сдвинута вправо
+   [[mobile-nav]] (п.3). Кольцо цвета --primary расходится наружу; лёгкая карточная тень
+   «вшита» в кадры, чтобы во время анимации не пропадала (box-shadow перекрывает shadow-card).
+   Аккуратно, но заметно. Глобальный prefers-reduced-motion гасит. */
+@keyframes cb-outline-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 0.12),
+      0 0 0 0 rgb(var(--primary) / 0.55);
+  }
+  50% {
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 0.12),
+      0 0 0 7px rgb(var(--primary) / 0);
+  }
+}
+.animate-cb-outline-pulse {
+  animation: cb-outline-pulse 1.5s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+/* Тот же пульс, но фиолетово-розовый (fuchsia-500) — под новый цвет кнопки
+   «Перезвоните мне» [[mobile-nav]] (п.1). */
+@keyframes cb-outline-pulse-magenta {
+  0%,
+  100% {
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 0.12),
+      0 0 0 0 rgb(217 70 239 / 0.55);
+  }
+  50% {
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 0.12),
+      0 0 0 7px rgb(217 70 239 / 0);
+  }
+}
+.animate-cb-outline-pulse-magenta {
+  animation: cb-outline-pulse-magenta 1.5s ease-in-out infinite;
+  will-change: box-shadow;
+}
+
+/* Вибрация иконки трубки внутри кнопки «Перезвоните мне» [[mobile-nav]] (п.4): длительность и
+   ритм совпадают с пульсом кнопки (cb-outline-pulse-magenta, 1.5s), а сама «тряска» приходится
+   на пик пульса (~50% — когда кольцо расходится). Между пульсами иконка неподвижна. */
+@keyframes cb-phone-vibrate {
+  0%,
+  40%,
+  60%,
+  100% {
+    transform: rotate(0) translateX(0);
+  }
+  43% {
+    transform: rotate(-13deg) translateX(-0.6px);
+  }
+  46% {
+    transform: rotate(11deg) translateX(0.6px);
+  }
+  49% {
+    transform: rotate(-8deg) translateX(-0.6px);
+  }
+  52% {
+    transform: rotate(6deg) translateX(0.6px);
+  }
+  55% {
+    transform: rotate(-3deg) translateX(0);
+  }
+}
+.animate-cb-phone-vibrate {
+  animation: cb-phone-vibrate 1.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Свёрнутый кластер контактов [[contact-fab]] (п.6): активная иконка сменяется каждые 2с —
+   новая «прилетает», крутясь вокруг своей оси. */
+@keyframes cb-fab-swap {
+  0% {
+    transform: rotate(-180deg) scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+.animate-cb-fab-swap {
+  animation: cb-fab-swap 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Раскрытие кластера контактов влево [[contact-fab]] (п.8): кнопки по очереди (staggered
+   через animation-delay) выезжают из-под якоря — аккуратно и «пружинисто». */
+@keyframes cb-fab-in {
+  0% {
+    transform: translateX(18px) scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+.animate-cb-fab-in {
+  animation: cb-fab-in 0.32s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+/* Лёгкое «подпрыгивание» иконок мессенджеров на месте при прокрутке страницы (п.2):
+   короткий прыжок вверх с мягким возвратом. */
+@keyframes cb-fab-bounce {
+  0% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-7px);
+  }
+  60% {
+    transform: translateY(-2px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+.animate-cb-fab-bounce {
+  animation: cb-fab-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}

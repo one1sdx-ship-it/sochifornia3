@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
 import { useFilterDodge, FILTER_DODGE_Y } from "@/components/use-filter-dodge";
+import { CALLBACK_OPEN_EVENT } from "@/components/callback-modal";
 
 // Событие «открыть панель фильтров»: единая плавающая кнопка шлёт его, когда мы уже в каталоге,
 // а список с панелью (CatalogFilters) его слушает.
@@ -21,10 +22,82 @@ export function FilterTab() {
   const router = useRouter();
   const onCatalog = pathname === "/tours";
   const [inView, setInView] = useState(false); // блок экскурсий на главной в зоне видимости
+  const [callbackOpen, setCallbackOpen] = useState(false); // открыта ли панель «Перезвоните мне»
+  const [dodgeAllowed, setDodgeAllowed] = useState(false); // «ворота»: разрешён ли подъём вверх (п.2)
   const dodging = useFilterDodge(); // прокрутка/листание фото → плавно опускаем и притушиваем
 
-  const visible = onCatalog || (pathname === "/" && inView);
-  const dodgeActive = dodging && visible; // опускаем только видимую кнопку
+  // Пока открыта панель обратного звонка [[callback-modal]] — прячем закладку «Фильтры».
+  useEffect(() => {
+    const onToggle = (e: Event) => setCallbackOpen((e as CustomEvent<boolean>).detail);
+    window.addEventListener(CALLBACK_OPEN_EVENT, onToggle);
+    return () => window.removeEventListener(CALLBACK_OPEN_EVENT, onToggle);
+  }, []);
+
+  const visible = (onCatalog || (pathname === "/" && inView)) && !callbackOpen;
+  // Подъём кнопки вверх применяем только когда открыты «ворота» dodgeAllowed (п.2): в каталоге —
+  // спустя 2с после начала прокрутки, на главной — после того как блок экскурсии пробыл в зоне
+  // видимости ≥2с. До этого кнопка при прокрутке остаётся на исходном месте.
+  const dodgeActive = dodging && visible && dodgeAllowed;
+
+  // «Ворота» для каталога (п.2): при каждом заходе на /tours сбрасываем разрешение и открываем
+  // его лишь спустя 2с после ПЕРВОЙ прокрутки. На других страницах этот эффект ничего не слушает.
+  useEffect(() => {
+    setDodgeAllowed(false);
+    if (!onCatalog) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let started = false;
+    const onScroll = () => {
+      if (started) return; // отсчёт 2с запускаем один раз — от начала прокрутки
+      started = true;
+      timer = setTimeout(() => setDodgeAllowed(true), 2000);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (timer) clearTimeout(timer);
+    };
+  }, [pathname, onCatalog]);
+
+  // «Ворота» для главной (п.2): разрешаем подъём, только когда блок экскурсии непрерывно пробыл
+  // в зоне видимости ≥2с. Если ушёл раньше — таймер сбрасывается (cleanup) и ждём следующего.
+  // Как только блоки ушли из вида — сбрасываем разрешение (п.3), чтобы при обратной прокрутке
+  // кнопка появилась в ИСХОДНОМ состоянии (не сдвинута, полностью видима), а не сохраняла «верхнее
+  // полупрозрачное» положение с момента исчезновения.
+  useEffect(() => {
+    if (pathname !== "/") return;
+    if (!inView) {
+      setDodgeAllowed(false);
+      return;
+    }
+    const t = setTimeout(() => setDodgeAllowed(true), 2000);
+    return () => clearTimeout(t);
+  }, [pathname, inView]);
+
+  // При прокрутке кнопка уезжает не вниз, а сильно ВВЕРХ — к шапке (п.4). Базовый top кнопки
+  // динамический (min(60%, …)), поэтому нужный сдвив считаем замером: цель — верх кнопки в 20px
+  // под нижним краём шапки. Значение отрицательное (вверх). Исходное положение не меняем.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [dodgeUp, setDodgeUp] = useState(0);
+  // Замер делаем ТОЛЬКО в покое — при монтировании и на resize (п.5). Раньше он пересчитывался и во
+  // время анимации возврата (когда dodgeActive гас), а getBoundingClientRect в этот момент отдаёт
+  // промежуточную позицию едущей кнопки → dodgeUp портился, и следующий сдвиг вверх не срабатывал.
+  // На старте transform кнопки в покое (dodge=0), поэтому rect.top = её исходный верх — корректно.
+  useEffect(() => {
+    const measure = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const header = document.querySelector("header");
+      const headerBottom = header ? header.getBoundingClientRect().bottom : 96;
+      const restTop = el.getBoundingClientRect().top; // верх кнопки в исходном положении
+      setDodgeUp(Math.min(0, headerBottom + 20 - restTop));
+    };
+    const raf = requestAnimationFrame(measure); // ждём финальный layout
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
 
   // На главной следим за блоком экскурсий; на остальных страницах наблюдатель не нужен.
   useEffect(() => {
@@ -67,10 +140,16 @@ export function FilterTab() {
 
   return (
     <div
-      className="fixed left-0 top-[60%] z-40 transition-[transform,opacity] duration-500 ease-out lg:hidden"
+      ref={wrapRef}
+      className="fixed left-0 z-40 transition-[transform,opacity] duration-500 ease-out lg:hidden"
       style={{
-        // X: показ/скрытие слева (закладка вплотную к левому краю); Y: центрирование (-50%) + опускание при прокрутке
-        transform: `translateX(${visible ? "0" : "-100%"}) translateY(calc(-50% + ${dodgeActive ? FILTER_DODGE_Y : 0}px))`,
+        // Верх: обычно 60% высоты, но на высоких экранах (Poco F2 Pro и т.п.) не ниже, чем
+        // «экран минус нижний коридор кнопок»: резервируем место под опускание (FILTER_DODGE_Y),
+        // саму закладку (~72px) и зону нижних плавающих кнопок «Наверх»/навигации (~172px).
+        // Иначе 60% + опускание наезжает на кнопку «Наверх» у нижнего края.
+        top: `min(60%, calc(100% - ${FILTER_DODGE_Y + 128 + 172}px))`,
+        // X: показ/скрытие слева (закладка вплотную к левому краю); Y: центрирование (-50%) + подъём к шапке при прокрутке (п.4)
+        transform: `translateX(${visible ? "0" : "-100%"}) translateY(calc(-50% + ${dodgeActive ? dodgeUp : 0}px))`,
         opacity: visible ? (dodgeActive ? 0.45 : 1) : 0,
         pointerEvents: visible ? "auto" : "none",
       }}
