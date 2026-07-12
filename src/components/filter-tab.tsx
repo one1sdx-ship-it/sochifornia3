@@ -150,7 +150,10 @@ export function FilterTab() {
         top: `min(60%, calc(100% - ${FILTER_DODGE_Y + 128 + 172}px))`,
         // X: показ/скрытие слева (закладка вплотную к левому краю); Y: центрирование (-50%) + подъём к шапке при прокрутке (п.4)
         transform: `translateX(${visible ? "0" : "-100%"}) translateY(calc(-50% + ${dodgeActive ? dodgeUp : 0}px))`,
-        opacity: visible ? (dodgeActive ? 0.45 : 1) : 0,
+        // Затухание при подъёме больше НЕ трогает весь элемент (иначе тускнели и надпись с иконкой).
+        // Здесь opacity управляет только показом/скрытием; полупрозрачной делаем лишь синюю
+        // подложку кнопки — см. фон-слой ниже (п.4).
+        opacity: visible ? 1 : 0,
         pointerEvents: visible ? "auto" : "none",
       }}
     >
@@ -159,9 +162,18 @@ export function FilterTab() {
         onPointerDown={onPointerDown}
         onClick={onClick}
         aria-label={onCatalog ? "Открыть фильтры" : "Перейти к фильтрам в каталоге"}
-        className="flex items-center gap-2 rounded-r-md bg-blue-600 px-2.5 py-5 text-sm font-semibold text-white shadow-float [writing-mode:vertical-rl]"
+        className="relative flex items-center gap-2 rounded-r-md px-2.5 py-5 text-sm font-semibold text-white [writing-mode:vertical-rl]"
       >
-        <SlidersHorizontal className="h-4 w-4" /> Фильтры
+        {/* Синяя подложка кнопки — только она притухает при подъёме к шапке. Надпись «Фильтры»
+            и иконка лежат поверх (relative) и остаются на 100% видимыми (п.4). */}
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-r-md bg-blue-600 shadow-float transition-opacity duration-500"
+          style={{ opacity: dodgeActive ? 0.45 : 1 }}
+        />
+        <span className="relative flex items-center gap-2">
+          <SlidersHorizontal className="h-4 w-4" /> Фильтры
+        </span>
       </button>
     </div>
   );

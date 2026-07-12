@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, Loader2, User, X } from "lucide-react";
+import { Check, ChevronLeft, Loader2, Pencil, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeadData, setLeadField } from "@/components/lead-store";
 import { stopScroll, startScroll } from "@/components/smooth-scroll";
@@ -30,6 +30,10 @@ const SLIDE_MS = 320;
 const SB_PAD = 6;
 const SB_MIN_THUMB = 36;
 
+// По ТЗ: свой ползунок-скроллбар в панели не показываем, даже если часть элементов не
+// помещается по вертикали. Прокрутка при этом остаётся доступной тач-жестом (нативно).
+const SHOW_SCROLLBAR = false;
+
 // Общая ширина полей и кнопок: на 28% уже полной (центрированная колонка).
 // Была 60% → расширена на 20% по горизонтали (60 × 1.2 = 72%).
 const COL = "mx-auto w-[72%] min-w-[240px]";
@@ -55,6 +59,18 @@ const PARTS: { key: Part; label: string }[] = [
 
 // Горизонтальная ширина кнопок части дня (по просьбе: Утро −40%, День −30%, Вечер −20%).
 const PART_WIDTH: Record<Part, number> = { morning: 60, day: 70, evening: 80, pick: 100 };
+
+// Кнопки выбора (5 пресетов и 4 части дня): полный и минимальный вертикальный паддинг и промежуток
+// между ними (px). Если по высоте все кнопки не помещаются — ужимаем паддинг (12→4) и промежуток
+// (12→6), чтобы влезли.
+const PRESET_PY_FULL = 12,
+  PRESET_PY_MIN = 4;
+const PRESET_GAP_FULL = 12,
+  PRESET_GAP_MIN = 6;
+// Карусели: полная и минимальная высота строки барабана (px). Видимая высота барабана = 3 строки,
+// поэтому при нехватке места уменьшаем высоту строки (62→40) — карусели ужимаются по вертикали.
+const WHEEL_H_FULL = 62,
+  WHEEL_H_MIN = 40;
 
 // Шаг мастера выбора времени и направление анимации активной группы.
 type Step = "presets" | "parts" | "wheels";
@@ -91,6 +107,21 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
   const [sb, setSb] = useState({ visible: false, top: 0, height: 0 });
   const sbDrag = useRef({ active: false, startY: 0, startScroll: 0 });
 
+  // Авто-подгонка вертикального размера активного шага: если содержимое не помещается по высоте —
+  // у кнопочных шагов (5 пресетов / 4 части дня) уменьшаем вертикальный паддинг кнопок и промежуток,
+  // у каруселей — высоту строки барабана. null → полный (нативный) размер.
+  const presetsColRef = useRef<HTMLDivElement>(null); // колонка кнопок активного шага (пресеты/части дня)
+  const [presetPY, setPresetPY] = useState<number | null>(null);
+  const [presetGap, setPresetGap] = useState<number | null>(null);
+  const [wheelH, setWheelH] = useState<number | null>(null); // высота строки каруселей
+  // Актуальные значения в рефах — чтобы замер из ResizeObserver считал стабильно, без устаревания.
+  const presetPYRef = useRef<number | null>(null);
+  const presetGapRef = useRef<number | null>(null);
+  const wheelHRef = useRef<number | null>(null);
+  presetPYRef.current = presetPY;
+  presetGapRef.current = presetGap;
+  wheelHRef.current = wheelH;
+
   // Актуальный onClose без пересоздания эффекта открытия при каждом рендере родителя.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -119,6 +150,53 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
   // пользователь печатает — не ругаемся. Флаг сбрасываем при возврате в поле (onFocus) и при открытии.
   const [phoneTouched, setPhoneTouched] = useState(false);
 
+  // Раскрытие формы. Пока имя не введено — показываем только вопрос «Как к вам обращаться?»
+  // и поля (имя + телефон) по центру; блок выбора времени и подвал с кнопками скрыты.
+  // Как только имя введено и фокус ушёл с поля имени (клик по телефону/любому месту панели) —
+  // раскрываемся: подпись-вопрос уезжает влево и схлопывается, поле имени прижимается к верху,
+  // появляется блок времени и подвал. Возврат фокуса в поле имени (или кнопка «Изменить») —
+  // сворачивает обратно.
+  const [revealed, setRevealed] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  // Однократная авто-прокрутка вниз, когда форма раскрылась (видны телефон + 5 кнопок), чтобы были
+  // видны нижние кнопки и подвал. Сбрасывается при каждом открытии панели.
+  const autoScrolledRef = useRef(false);
+
+  const onNameFocus = () => setRevealed(false);
+  const onNameBlur = () => {
+    // Раскрываем, если введено имя ИЛИ уже валиден телефон (имя необязательно).
+    if (data.name.trim() || phoneOk) setRevealed(true);
+  };
+
+  // Как только телефон введён полностью — раскрываем форму, даже если имя пустое
+  // (подпись-вопрос и поле имени уезжают, появляются заголовок времени и 5 кнопок).
+  useEffect(() => {
+    if (phoneOk) setRevealed(true);
+  }, [phoneOk]);
+
+  // Один раз при раскрытии формы на шаге пресетов (видны телефон + 5 кнопок) — плавно прокручиваем
+  // вниз, чтобы нижние кнопки и подвал попали в зону видимости (двойной rAF — ждём применения
+  // новой раскладки после раскрытия).
+  useEffect(() => {
+    if (!open || !revealed || step !== "presets" || autoScrolledRef.current) return;
+    autoScrolledRef.current = true;
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [open, revealed, step]);
+  // «Изменить» в подвале: то же, что клик по полю имени — вернуть подпись-вопрос и поле на место.
+  const startEditName = () => {
+    setRevealed(false);
+    requestAnimationFrame(() => nameRef.current?.focus());
+  };
+
   // Пересчёт размера/положения бегунка по метрикам прокрутки внутренней области.
   const updateScrollbar = () => {
     const el = scrollRef.current;
@@ -133,6 +211,83 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
     const maxTop = trackH - thumbH;
     const top = maxTop > 0 ? (scrollTop / (scrollHeight - clientHeight)) * maxTop : 0;
     setSb({ visible: true, top, height: thumbH });
+  };
+
+  // Подгонка активного шага под доступную высоту (зависит от вертикального разрешения):
+  // • «presets» (5 кнопок) и «parts» (4 кнопки) — ужимаем сперва вертикальный паддинг кнопок
+  //   (12→4), затем промежутки между ними (12→6);
+  // • «wheels» (карусели «час/минута» и «день и месяц/час/минута») — уменьшаем высоту строки
+  //   барабана (62→40); видимая высота каждого барабана = 3 строки.
+  // Если всё помещается — возвращаем нативные размеры.
+  //
+  // Высоту содержимого меряем как СУММУ высот прямых детей области + её вертикальные паддинги —
+  // это настоящая «натуральная» высота, которая, в отличие от scrollHeight, не упирается в
+  // clientHeight, когда контент помещается. Прибавляя уже сэкономленную высоту (saved), получаем
+  // высоту «как при полном размере» → расчёт стабилен и корректно включается/выключается.
+  const fitControls = () => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+
+    // Натуральная высота содержимого = верт. паддинги области + высоты прямых детей + их отступы.
+    // ВАЖНО: у первого ребёнка верхний отступ — центрирующий mt-auto, у последнего нижний — mb-auto;
+    // они держат «люфт» центрирования и в высоту содержимого НЕ входят (иначе высота всегда была бы
+    // равна доступной и подгонка не включалась). Поэтому пропускаем marginTop у первого и marginBottom
+    // у последнего, а фиксированные отступы (mt-8 у заголовка, mt-3 у блока времени) — учитываем.
+    const cs = getComputedStyle(scroller);
+    let content = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const kids = Array.from(scroller.children) as HTMLElement[];
+    kids.forEach((el, i) => {
+      const s = getComputedStyle(el);
+      content += el.offsetHeight;
+      if (i > 0) content += parseFloat(s.marginTop) || 0; // верхний auto только у первого — пропускаем
+      if (i < kids.length - 1) content += parseFloat(s.marginBottom) || 0; // нижний auto только у последнего
+    });
+
+    // ===== Шаг каруселей: ужимаем высоту строки барабанов =====
+    if (step === "wheels") {
+      const curH = wheelHRef.current ?? WHEEL_H_FULL;
+      const saved = (WHEEL_H_FULL - curH) * 3; // барабан показывает 3 строки
+      const need = content + saved - scroller.clientHeight;
+      if (need <= 0) {
+        if (wheelHRef.current !== null) setWheelH(null);
+        return;
+      }
+      const h = Math.round(Math.max(WHEEL_H_MIN, WHEEL_H_FULL - need / 3));
+      if (h !== curH) setWheelH(h);
+      return;
+    }
+
+    // ===== Кнопочные шаги: 5 пресетов или 4 части дня =====
+    const col = presetsColRef.current;
+    if (!col) return;
+    const nBtn = step === "presets" ? PRESETS.length : PARTS.length;
+    const gaps = Math.max(0, nBtn - 1);
+    const curPy = presetPYRef.current ?? PRESET_PY_FULL;
+    const curGap = presetGapRef.current ?? PRESET_GAP_FULL;
+    const saved = (PRESET_PY_FULL - curPy) * 2 * nBtn + (PRESET_GAP_FULL - curGap) * gaps;
+    // Высота, как если бы кнопки были полноразмерными.
+    const need = content + saved - scroller.clientHeight;
+
+    // Помещается при полном размере — нативные отступы.
+    if (need <= 0) {
+      if (presetPYRef.current !== null) setPresetPY(null);
+      if (presetGapRef.current !== null) setPresetGap(null);
+      return;
+    }
+    let rem = need;
+    // Сначала ужимаем паддинг самих кнопок…
+    const maxPy = (PRESET_PY_FULL - PRESET_PY_MIN) * 2 * nBtn;
+    const usePy = Math.min(rem, maxPy);
+    const py = Math.round(Math.max(PRESET_PY_MIN, PRESET_PY_FULL - usePy / (2 * nBtn)));
+    rem -= usePy;
+    // …затем промежутки между ними (если ужима паддинга не хватило).
+    const maxGap = (PRESET_GAP_FULL - PRESET_GAP_MIN) * gaps;
+    const useGap = Math.min(rem, maxGap);
+    const gapPx = gaps
+      ? Math.round(Math.max(PRESET_GAP_MIN, PRESET_GAP_FULL - useGap / gaps))
+      : PRESET_GAP_FULL;
+    if (py !== curPy) setPresetPY(py);
+    if (gapPx !== curGap) setPresetGap(gapPx);
   };
 
   // Перетаскивание бегунка (палец/мышь) → прокрутка области.
@@ -168,8 +323,14 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
     if (!open) return;
     const el = scrollRef.current;
     if (!el) return;
-    const raf = requestAnimationFrame(updateScrollbar);
-    const ro = new ResizeObserver(updateScrollbar);
+    // Одновременно обновляем свой скроллбар и подгоняем вертикальный размер активного шага
+    // (кнопки/карусели) под доступную высоту.
+    const onResize = () => {
+      updateScrollbar();
+      fitControls();
+    };
+    const raf = requestAnimationFrame(onResize);
+    const ro = new ResizeObserver(onResize);
     ro.observe(el);
     for (const child of Array.from(el.children)) ro.observe(child);
     return () => {
@@ -177,7 +338,17 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
       ro.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, step, status, part, preset, phoneOk]);
+  }, [open, step, status, part, preset, phoneOk, revealed]);
+
+  // Дублируем пересчёт подгонки на изменения состояния и размеров окна (высота панели зависит
+  // от промежутка gap.top/bottom, а он меняется при ресайзе/повороте) — чтобы срабатывало надёжно,
+  // не только по ResizeObserver. rAF — ждём применения новой раскладки перед замером.
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(fitControls);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, revealed, step, preset, part, wheelKind, touched, phoneOk, data.name, gap.top, gap.bottom]);
 
   // Значения каруселей.
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")), []);
@@ -213,6 +384,9 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
     setPhoneTouched(false);
     setPreset("now");
     setPart(null);
+    autoScrolledRef.current = false; // сбрасываем однократный авто-скролл вниз при новом открытии
+    // Если имя уже сохранено ИЛИ телефон уже валиден (возврат клиента) — открываемся раскрытыми.
+    setRevealed(Boolean(data.name.trim()) || phoneOk);
 
     measure();
     stopScroll();
@@ -243,6 +417,7 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
       // Снимаем свою запись истории, если закрылись не «Назадом».
       if (window.history.state?.callback) window.history.back();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Класс анимации активной группы.
@@ -306,8 +481,20 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
   // «< Изменить»: возврат на предыдущий шаг (группа въезжает слева).
   function back() {
     clearTimers();
-    if (step === "wheels") setStep(wheelKind === "hm" ? "parts" : "presets");
-    else if (step === "parts") setStep("presets");
+    if (step === "wheels") {
+      if (wheelKind === "hm") {
+        // Возврат из каруселей «Завтра» → к частям дня (пресет «Завтра» остаётся выбранным).
+        setStep("parts");
+      } else {
+        // Возврат из «Другое время»: точное время НЕ задано, а перезвонить «в другое время»
+        // не зная его нельзя — поэтому автоматически сбрасываем выбор на «Сейчас».
+        setStep("presets");
+        setPreset("now");
+        setPart(null);
+      }
+    } else if (step === "parts") {
+      setStep("presets");
+    }
     setAnim("in-left");
   }
 
@@ -391,35 +578,78 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div
                   ref={scrollRef}
                   onScroll={updateScrollbar}
-                  className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-6"
+                  // pb-3: небольшой зазор снизу — 5-я кнопка «Другое время» не упирается вплотную
+                  // в подвал (border-t). Замер fitControls учитывает паддинги области, так что при
+                  // нехватке высоты кнопки ужмутся чуть сильнее, сохраняя этот зазор.
+                  className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-3 pt-6"
                   data-lenis-prevent
                 >
-                {/* Вся конструкция (имя → телефон → заголовок → кнопки) центрируется по вертикали:
-                    mt-auto здесь + mb-auto у блока кнопок ниже. При нехватке высоты авто-поля
-                    схлопываются в 0 → конструкция прижимается к верху и появляется прокрутка. */}
-                {/* Поля: имя + телефон в узкой центрированной колонке (−40% по ширине) */}
-                <div className={cn(COL, "mt-auto")}>
+                {/* Вертикальное центрирование: mt-auto здесь + mb-auto у блока выбора времени.
+                    Пока форма свёрнута — имя+телефон по центру; по мере раскрытия нижней части
+                    авто-отступы пересчитываются плавно и конструкция «подтягивается» к верху.
+                    При нехватке высоты авто-отступы схлопываются в 0 → прижатие к верху. */}
+                {/* Поля: имя + телефон в узкой центрированной колонке (−40% по ширине).
+                    shrink-0: дети flex-колонки НЕ сжимаются браузером при нехватке высоты — иначе
+                    замер fitControls всегда видел «всё помещается» и ужатие кнопок не включалось. */}
+                <div className={cn(COL, "mt-auto shrink-0")}>
                   {/* 1. Имя — необязательно */}
                   <label className="block">
-                    <span className="mb-1.5 block text-center text-sm font-medium text-ink">
-                      Как можем к <strong className="font-bold">вам</strong> обращаться?
-                    </span>
-                    {/* «Утопленный» вид поля (bg-surface-2 + внутренняя тень) + иконка слева и
-                        текст по левому краю — чтобы поле явно читалось как поле ВВОДА, а не как кнопка. */}
-                    <div className="relative">
-                      <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                      <input
-                        value={data.name}
-                        onChange={(e) => setLeadField("name", e.target.value)}
-                        placeholder="Ваше имя"
-                        className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-4 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
-                      />
+                    {/* Подпись-вопрос: уезжает влево и схлопывается по высоте при раскрытии
+                        (тогда поле имени поднимается к верху), выезжает обратно при возврате. */}
+                    <div
+                      className={cn(
+                        "overflow-hidden transition-all duration-500 ease-out",
+                        revealed
+                          ? "max-h-0 -translate-x-[130%] opacity-0"
+                          : "mb-1.5 max-h-10 translate-x-0 opacity-100"
+                      )}
+                    >
+                      <span className="block text-center text-sm font-medium text-ink">
+                        Как можем к <strong className="font-bold">вам</strong> обращаться?
+                      </span>
                     </div>
-                    {/* Подпись под именем — «НЕ обязательно», зелёная; правый край выровнен по
-                        правой стороне поля (п.1) */}
-                    <span className="mt-1 block text-right text-xs font-medium text-success">
-                      НЕ обязательно
-                    </span>
+                    {/* Поле имени + подпись «НЕ обязательно» уезжают ЗА верхний край окна при
+                        раскрытии: внешняя обёртка схлопывает высоту (телефон плавно поднимается),
+                        внутренняя уводит содержимое вверх (translateY) с затуханием. */}
+                    <div
+                      className={cn(
+                        "overflow-hidden transition-[max-height,opacity] duration-500 ease-out",
+                        revealed ? "max-h-0 opacity-0" : "max-h-28 opacity-100"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "transition-transform duration-500 ease-out",
+                          revealed ? "-translate-y-full" : "translate-y-0"
+                        )}
+                      >
+                        {/* «Утопленный» вид поля (bg-surface-2 + внутренняя тень) + иконка слева —
+                            чтобы поле явно читалось как поле ВВОДА, а не как кнопка. */}
+                        <div className="relative">
+                          <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                          <input
+                            ref={nameRef}
+                            value={data.name}
+                            onChange={(e) => setLeadField("name", e.target.value)}
+                            onFocus={onNameFocus}
+                            onBlur={onNameBlur}
+                            placeholder="Ваше имя"
+                            className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-4 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                        {/* Подпись под именем — «НЕ обязательно», зелёная. На 30% крупнее базового
+                            text-xs (0.75rem × 1.3 = 0.975rem). Текст обёрнут в inline-block с
+                            циклической анимацией подчёркивания (полоса заполняется слева направо,
+                            затем исчезает и начинает заново) — класс .animate-cb-underline. */}
+                        {/* pb-1: даём место анимированному подчёркиванию (::after на bottom:-2px),
+                            иначе его срезает верхний контейнер overflow-hidden (max-h-28). */}
+                        <span className="mt-1 block pb-1 text-right">
+                          <span className="animate-cb-underline relative inline-block text-[0.975rem] font-medium text-success">
+                            НЕ обязательно
+                          </span>
+                        </span>
+                      </div>
+                    </div>
                   </label>
 
                   {/* 2. Телефон — обязательно. Выбор страны флаг-дропдауном + форматирование и
@@ -461,21 +691,61 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                   </label>
                 </div>
 
-                {/* 3. Заголовок выбора времени — обычный статичный текст (без анимации и без
-                    подмены на зелёную «НЕ обязательно»). Сама подсказка «НЕ обязательно» теперь
-                    показывается под кнопкой «Сейчас» (см. шаг с пресетами ниже). */}
-                <div className="mt-8 text-center text-[15px] font-medium">
-                  <span className="block text-ink">
-                    Когда вам удобно <strong className="font-bold">получить консультацию</strong>?
-                  </span>
+                {/* 3. Заголовок «Когда вам удобно…» — выезжает справа к центру (внутренний
+                    translateX) и схлопывается по высоте, когда форма свёрнута. */}
+                <div
+                  className={cn(
+                    "shrink-0 overflow-hidden transition-[max-height,opacity,margin] duration-500 ease-out",
+                    revealed ? "mt-8 max-h-20 opacity-100" : "mt-0 max-h-0 opacity-0"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "text-center text-[15px] font-medium transition-transform duration-500 ease-out",
+                      revealed ? "translate-x-0" : "translate-x-[130%]"
+                    )}
+                  >
+                    <span className="block text-ink">
+                      Когда вам удобно <strong className="font-bold">получить консультацию</strong>?
+                    </span>
+                  </div>
                 </div>
 
-                <div className="relative mb-auto mt-3 min-h-[300px] overflow-hidden">
+                {/* Блок выбора времени — выезжает снизу, из-под нижнего края окна (внутренний
+                    translateY), и схлопывается по высоте, когда форма свёрнута.
+                    mb-auto — пара к mt-auto колонки полей (вертикальное центрирование). */}
+                <div
+                  className={cn(
+                    "mb-auto shrink-0 overflow-hidden transition-[max-height,opacity,margin] duration-500 ease-out",
+                    revealed ? "mt-3 max-h-[560px] opacity-100" : "mt-0 max-h-0 opacity-0"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "transition-transform duration-500 ease-out",
+                      revealed ? "translate-y-0" : "translate-y-full"
+                    )}
+                  >
+                    {/* overflow-x-clip: прячем горизонтальный уезд кнопок при анимации слайда.
+                        ВАЖНО: при overflow-x: clip браузер вычисляет overflow-y тоже как clip
+                        (visible рядом с clip невозможен), поэтому по вертикали контент ТОЖЕ
+                        обрезается по нижнему краю. Из-за этого срезалась «приподнятая» тень-
+                        ступенька последней кнопки «Другое время» (shadow 0 2px 0) — выглядело
+                        как будто её нижний край чем-то перекрыт. pb-1 даёт 4px запаса снизу под
+                        эту тень (padding входит в область отсечения, поэтому тень снова видна).
+                        Без min-h: минимальная высота завышала замер fitControls на шагах
+                        «части дня» (натуральная высота ~220px) и «карусели» (~232px) — они
+                        ужимались без надобности и не разжимались обратно при появлении места. */}
+                    <div className="relative overflow-x-clip pb-1">
                   {/* Шаг 1: 5 пресет-кнопок. Слой анимации — полной ширины (чтобы узкая
                       колонка целиком уезжала за край), внутри — центрированная колонка 60%. */}
                   {step === "presets" && (
                     <div key="presets" className={cn("w-full", animClass)}>
-                      <div className={cn("flex flex-col items-center gap-3", COL)}>
+                      <div
+                        ref={presetsColRef}
+                        className={cn("flex flex-col items-center gap-3", COL)}
+                        style={presetGap != null ? { gap: presetGap } : undefined}
+                      >
                         {PRESETS.map(({ key, label }) => (
                           // Каждая кнопка в своей колонке: под ВЫБРАННОЙ показываем зелёную
                           // подсказку. items-end → правый край подписи выровнен по правому краю
@@ -487,12 +757,15 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                               selected={preset === key}
                               // приглушаем остальные до 30% только ПОСЛЕ первого выбора
                               dim={touched && preset !== key ? 30 : false}
+                              // вертикальный паддинг ужимается, если 5 кнопок не помещаются по высоте
+                              padY={presetPY}
                               onClick={() => choosePreset(key)}
                             />
                             {/* Подсказка следует за выбором. «По умолчанию» — только у «Сейчас»
                                 (это выбор по умолчанию); у остальных кнопок «Выберите по желанию»
-                                (п.2). Показываем, пока телефон не введён. */}
-                            {preset === key && !phoneOk && (
+                                (п.2). Показываем всегда у выбранной кнопки — в т.ч. после ввода
+                                телефона (раньше по ошибке скрывалась при валидном номере). */}
+                            {preset === key && (
                               <span className="mt-1 text-right text-xs font-medium text-success">
                                 {key === "now"
                                   ? "НЕ обязательно | По умолчанию"
@@ -508,7 +781,13 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                   {/* Шаг 2: 4 кнопки части дня (ветка «Завтра») ровно по центру + метка справа */}
                   {step === "parts" && (
                     <div key="parts" className={cn("relative", animClass)}>
-                      <div className={cn("flex flex-col items-center gap-3", COL)}>
+                      {/* Та же авто-подгонка, что у 5 пресетов: паддинг и промежутки ужимаются,
+                          если 4 кнопки не помещаются по вертикали. */}
+                      <div
+                        ref={presetsColRef}
+                        className={cn("flex flex-col items-center gap-3", COL)}
+                        style={presetGap != null ? { gap: presetGap } : undefined}
+                      >
                         {PARTS.map(({ key, label }) => (
                           <ChoiceButton
                             key={key}
@@ -517,6 +796,7 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                             // после выбора остальные до 50%
                             dim={part !== null && part !== key ? 50 : false}
                             widthPct={PART_WIDTH[key]}
+                            padY={presetPY}
                             onClick={() => choosePart(key)}
                           />
                         ))}
@@ -531,23 +811,27 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                   {/* Шаг 3: карусели (2 — для «Выбрать время», 3 — для «Другое время») */}
                   {step === "wheels" && (
                     <div key="wheels" className={animClass}>
+                      {/* itemH: высота строки барабанов ужимается fitControls, если карусели
+                          не помещаются по вертикали (та же логика, что у кнопок). */}
                       <div className="flex items-start justify-center gap-2 pt-6">
                         {wheelKind === "dhm" && (
-                          <WheelPicker label="День и месяц" wide items={days} index={dIdx} onChange={setDIdx} inertia={0.9} />
+                          <WheelPicker label="День и месяц" wide items={days} index={dIdx} onChange={setDIdx} inertia={0.9} itemH={wheelH ?? WHEEL_H_FULL} />
                         )}
                         {/* Часы — выбор только 9:00–21:00 (вне диапазона авто-прокрутка и приглушение),
                             минуты — бесконечно. Обе крутятся нативно (плавность как на iPhone). */}
-                        <WheelPicker label="Час" items={hours} index={hIdx} onChange={setHIdx} loop inertia={0.9} range={[9, 21]} />
-                        <WheelPicker label="Минута" items={minutes} index={mIdx} onChange={setMIdx} loop inertia={0.95} />
+                        <WheelPicker label="Час" items={hours} index={hIdx} onChange={setHIdx} loop inertia={0.9} range={[9, 21]} itemH={wheelH ?? WHEEL_H_FULL} />
+                        <WheelPicker label="Минута" items={minutes} index={mIdx} onChange={setMIdx} loop inertia={0.95} itemH={wheelH ?? WHEEL_H_FULL} />
                       </div>
                     </div>
                   )}
+                    </div>
+                  </div>
                 </div>
                 </div>
 
-                {/* Свой скроллбар: всегда виден, пока есть прокрутка. Заметный тёмный бегунок,
-                    перетаскивается пальцем/мышью; дорожка показывает, что снизу есть ещё кнопки. */}
-                {sb.visible && (
+                {/* Свой скроллбар отключён по ТЗ (SHOW_SCROLLBAR=false): бегунок не появляется,
+                    даже если контент не помещается по высоте — прокрутка остаётся тач-жестом. */}
+                {SHOW_SCROLLBAR && sb.visible && (
                   <div className="pointer-events-none absolute bottom-1.5 right-1 top-1.5 z-20 w-[14px] rounded-full bg-ink/10">
                     <div
                       onPointerDown={onSbDown}
@@ -561,8 +845,9 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 )}
               </div>
 
-              {/* «< Назад» — над разделительной линией: на 10% крупнее, чуть выше и правее */}
-              {step !== "presets" && (
+              {/* «< Назад» — над разделительной линией: на 10% крупнее, чуть выше и правее.
+                  Показываем только в раскрытой форме. */}
+              {revealed && step !== "presets" && (
                 <button
                   type="button"
                   onClick={back}
@@ -572,10 +857,41 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 </button>
               )}
 
-              {/* Подвал: превью + кнопка подтверждения */}
-              <div className="border-t border-hairline px-4 py-3">
-                <div className="mb-2 text-center text-[0.945rem] text-muted">
-                  Перезвоним: <span className="font-semibold text-ink">{whenText()}</span>
+              {/* Подвал: превью + кнопка подтверждения. Виден только в раскрытой форме
+                  (а раскрытие возможно лишь при введённом имени). */}
+              {revealed && (
+              <div className="border-t border-hairline px-4 pt-3 pb-5 animate-fade-in">
+                {/* Превью в две строки. 1-я: кнопка «Изменить имя» (карандаш анимирован) + имя
+                    пользователя приятным фиолетовым с запятой (прижата к левому краю). 2-я:
+                    «мы вам перезвоним: …» (прижата к правому краю). items-stretch — чтобы строки
+                    занимали всю ширину и могли выравниваться по разным краям. mb-4 — больше
+                    вертикального отступа до кнопки «Подтвердить обратный звонок». */}
+                <div className="mb-4 flex flex-col items-stretch gap-1 text-[0.945rem] text-muted">
+                  {/* 1-я строка: кнопка «Изменить имя» прижата к левому краю (absolute), а имя
+                      клиента центрируется по всей ширине строки (не смещается кнопкой). */}
+                  <div className="relative flex min-h-[1.75rem] items-center">
+                    <button
+                      type="button"
+                      onClick={startEditName}
+                      className="absolute left-0 inline-flex items-center gap-1 rounded-full border border-hairline bg-surface px-2.5 py-1 text-xs font-medium text-ink active:scale-95"
+                    >
+                      <Pencil className="animate-pencil-wiggle h-3.5 w-3.5 text-primary" /> Изменить имя
+                    </button>
+                    {/* Имя по центру строки. При пустом имени запятую не показываем. */}
+                    {data.name.trim() && (
+                      <span className="w-full text-center">
+                        <span className="font-semibold" style={{ color: "#b45cf2" }}>
+                          {data.name.trim()}
+                        </span>
+                        ,
+                      </span>
+                    )}
+                  </div>
+                  {/* 2-я строка: «мы вам перезвоним: …» по центру. */}
+                  <div className="text-center">
+                    мы <strong className="font-bold">вам</strong> перезвоним:{" "}
+                    <span className="font-semibold text-ink">{whenText()}</span>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -597,6 +913,7 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                   )}
                 </button>
               </div>
+              )}
             </>
           )}
         </div>
@@ -614,6 +931,7 @@ function ChoiceButton({
   onClick,
   widthPct,
   bold,
+  padY,
 }: {
   label: string;
   selected: boolean;
@@ -621,19 +939,27 @@ function ChoiceButton({
   onClick: () => void;
   widthPct?: number; // ширина в % от колонки (для кнопок части дня); по умолчанию — во всю ширину
   bold?: boolean; // жирная метка (для кнопки «Сейчас»)
+  padY?: number | null; // вертикальный паддинг в px (перекрывает py-3), если кнопки не влезают по высоте
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      // Инлайн-ширина (если задана) перекрывает w-full — так уменьшаем отдельные кнопки по горизонтали.
-      style={widthPct ? { width: `${widthPct}%` } : undefined}
+      // Инлайн-стиль (если задан) перекрывает классы: ширину — для кнопок части дня, вертикальный
+      // паддинг — когда 5 пресет-кнопок ужимаются, чтобы поместиться по высоте.
+      style={{
+        ...(widthPct ? { width: `${widthPct}%` } : {}),
+        ...(padY != null ? { paddingTop: padY, paddingBottom: padY } : {}),
+      }}
       // Явный «кнопочный» вид, чтобы вариант нельзя было спутать с полем ввода:
       // • форма-пилюля (rounded-full) в отличие от прямоугольных полей;
       // • радио-индикатор слева (кольцо → зелёная галка);
       // • «приподнятая» нижняя тень-ступенька (0 2px 0) с проседанием при нажатии.
+      // Анимируем только цвета/тень/нажатие/прозрачность — НЕ паддинг (transition-all нельзя):
+      // иначе авто-ужатие высоты (padY из fitControls) анимируется, ResizeObserver ловит
+      // промежуточные высоты и кнопки «пружинят» туда-сюда. Размер применяется мгновенно.
       className={cn(
-        "relative flex w-full cursor-pointer items-center justify-center rounded-full border px-11 py-3 text-center text-[15px] shadow-[0_2px_0_rgba(17,17,17,0.08)] transition-all duration-200 active:translate-y-px active:shadow-none",
+        "relative flex w-full cursor-pointer items-center justify-center rounded-full border px-11 py-3 text-center text-[15px] shadow-[0_2px_0_rgba(17,17,17,0.08)] transition-[border-color,background-color,color,box-shadow,transform,opacity] duration-200 active:translate-y-px active:shadow-none",
         bold ? "font-bold" : "font-medium",
         selected
           ? "border-primary bg-primary/10 text-ink"
@@ -677,6 +1003,7 @@ function WheelPicker({
   loop = false,
   inertia = 0,
   range,
+  itemH = WHEEL_H_FULL,
 }: {
   label: string;
   items: string[];
@@ -686,9 +1013,10 @@ function WheelPicker({
   loop?: boolean; // бесконечная прокрутка вверх/вниз (час/минута)
   inertia?: number; // сила инерции ручного перетаскивания мышью (0 — без инерции)
   range?: [number, number]; // допустимый диапазон значений (час: [9,21]); вне — приглушение + авто-докрутка
+  itemH?: number; // высота строки (px); ужимается fitControls, если карусели не влезают по вертикали
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const ITEM_H = 62; // высота строки
+  const ITEM_H = itemH; // высота строки
 
   const base = items.length;
   // Бесконечная лента: повторяем значения и стартуем из центрального блока.
@@ -707,6 +1035,8 @@ function WheelPicker({
   const settle = useRef(0); // таймер «прокрутка остановилась»
 
   // При монтировании прокручиваем к текущему значению (в центральный блок для loop).
+  // При смене высоты строки (авто-ужатие itemH) пересинхронизируем позицию к выбранному значению,
+  // иначе scrollTop, посчитанный под старую высоту, укажет на другой элемент.
   useEffect(() => {
     const el = ref.current;
     if (el) el.scrollTop = topFor(index);
@@ -715,7 +1045,7 @@ function WheelPicker({
       clearTimeout(settle.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [itemH]);
 
   // Держим бесконечную ленту в середине: у края сдвигаем на целые блоки (незаметно для глаза).
   const keepCentered = (el: HTMLDivElement) => {

@@ -124,7 +124,8 @@ export function Header() {
               </button>
             </div>
             <nav className="mt-8 flex flex-col gap-1">
-              {nav.map((item) => (
+              {/* В мобильном меню раздел «Гиды» скрыт (остаётся в десктоп-навигации). */}
+              {nav.filter((item) => item.href !== "/guides").map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}

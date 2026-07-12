@@ -5,6 +5,10 @@ import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { OPEN_LEAD_EVENT } from "@/components/lead-overlay";
 
+// Событие «бар бронирования показан/скрыт» (detail: boolean). Слушает плавающий кластер
+// [[contact-fab]], чтобы подниматься над баром при его появлении и возвращаться при скрытии (п.1).
+export const BOOKINGBAR_EVENT = "sf:bookingbar";
+
 // Липкий бар бронирования снизу (мобайл) — конверсионный паттерн.
 // Кнопка «Оставить заявку» открывает полноэкранную панель заявки [[lead-overlay]]
 // (та сама прокручивает страницу к основной панели и блокирует прокрутку).
@@ -16,6 +20,19 @@ export function StickyBookingBar({ price }: { price: number }) {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  // Сообщаем плавающему кластеру о показе/скрытии бара, чтобы он подъезжал выше и обратно (п.1).
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(BOOKINGBAR_EVENT, { detail: show }));
+  }, [show]);
+
+  // При уходе со страницы тура бар исчезает — обязательно возвращаем кластер на место.
+  useEffect(
+    () => () => {
+      window.dispatchEvent(new CustomEvent(BOOKINGBAR_EVENT, { detail: false }));
+    },
+    []
+  );
 
   const openLead = () => window.dispatchEvent(new Event(OPEN_LEAD_EVENT));
 

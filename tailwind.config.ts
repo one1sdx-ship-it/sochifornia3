@@ -96,6 +96,20 @@ const config: Config = {
           "0%, 100%": { transform: "scale(1)" },
           "50%": { transform: "scale(1.05)" },
         },
+        // Карандаш у кнопки «Изменить»: мягко «пишет» — лёгкое покачивание с наклоном,
+        // намекая, что имя можно поправить в любой момент.
+        "pencil-wiggle": {
+          "0%, 100%": { transform: "rotate(0deg) translateY(0)" },
+          "25%": { transform: "rotate(-14deg) translateY(-1px)" },
+          "50%": { transform: "rotate(0deg) translateY(0)" },
+          "75%": { transform: "rotate(14deg) translateY(-1px)" },
+        },
+        // Стрелка кнопки «Наверх»: циклично «подпрыгивает» вверх и мягко возвращается,
+        // подсказывая, что нажатие вернёт страницу наверх.
+        "arrow-hint": {
+          "0%, 70%, 100%": { transform: "translateY(0)", opacity: "1" },
+          "35%": { transform: "translateY(-4px)", opacity: "0.7" },
+        },
       },
       animation: {
         "fade-up": "fade-up 0.6s cubic-bezier(0.16,1,0.3,1) both",
@@ -108,6 +122,8 @@ const config: Config = {
         "slide-out-down": "slide-out-down 0.32s cubic-bezier(0.16,1,0.3,1) both",
         "fade-in": "fade-in 0.25s ease both",
         "kaifun-pulse": "kaifun-pulse 1.2s ease-in-out infinite",
+        "pencil-wiggle": "pencil-wiggle 1.6s ease-in-out infinite",
+        "arrow-hint": "arrow-hint 1.5s ease-in-out infinite",
       },
     },
   },

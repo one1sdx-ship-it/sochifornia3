@@ -121,8 +121,9 @@ export function MobileNav() {
     <>
       {/* Плавающие кнопки над нижней навигацией */}
       {/* Кнопка «Наверх»: как закладка «Фильтры» — торчит из-за левого края экрана (скругление только
-          справа, без левой рамки), опущена ниже (исходно 164 → 132). В скрытом виде уезжает за левый край. */}
-      <div className="fixed bottom-[132px] left-0 z-40 lg:hidden">
+          справа, без левой рамки). Приподнята (132 → 147) и увеличена на 20% (h-10 → h-12).
+          В скрытом виде уезжает за левый край. */}
+      <div className="fixed bottom-[147px] left-0 z-40 lg:hidden">
         <button
           type="button"
           aria-label="Наверх"
@@ -131,22 +132,34 @@ export function MobileNav() {
           // «съедается» остановкой инерции — а по нажатию возврат наверх происходит сразу.
           onPointerDown={smoothScrollToTop}
           className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-r-md border border-l-0 border-hairline bg-surface text-ink shadow-card transition-all duration-300",
+            "flex h-12 w-12 items-center justify-center rounded-r-md border border-l-0 border-hairline bg-surface text-ink shadow-card transition-all duration-300",
             showTop && !callbackOpen
               ? "translate-x-0 opacity-100"
               : "pointer-events-none -translate-x-full opacity-0"
           )}
         >
-          <ArrowUp className="h-5 w-5" />
+          <ArrowUp className="animate-arrow-hint h-6 w-6" />
         </button>
       </div>
 
       {/* Плавающий кластер способов связи (WhatsApp/Telegram/Почта/Телефон + «Чат с оператором»).
           Свёрнут в одну круглую кнопку; по тапу раскрывается влево [[contact-fab]]. */}
-      <ContactFab phoneVisible={phoneVisible} callbackOpen={callbackOpen} collapsedBottom={clusterBottom} onExpand={() => setPinned(true)} />
+      <ContactFab
+        phoneVisible={phoneVisible}
+        callbackOpen={callbackOpen}
+        collapsedBottom={clusterBottom}
+        onExpand={() => setPinned(true)}
+        // В разделах без синей плашки («Контакты», «Отзывы» и пр.) циклер раскрывается сразу,
+        // без ожидания выезда подложки.
+        contextAvailable={showContext}
+      />
 
-      {/* Нижний блок: контекстная кнопка телефона (только каталог) + навигация */}
-      <div className="fixed inset-x-0 bottom-0 z-40 lg:hidden">
+      {/* Нижний блок: контекстная кнопка телефона (только каталог) + навигация.
+          pointer-events-none и здесь: прозрачный контейнер сам ловит тапы по всей своей области
+          (даже когда дочерняя зона уже pointer-events-none, хит-тест «проваливается» в родителя) —
+          и не пускал их к свёрнутому циклеру [[contact-fab]], опущенному на уровень зоны.
+          Кликабельность возвращаем навигации (ниже) и точечно кнопке/номеру в зоне. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 lg:hidden">
         {/* Контекстная зона над навигацией (только каталог). Белая кнопка «Перезвоните мне»
             остаётся на своём месте ВСЕГДА; синяя подложка и номер телефона появляются
             (при листании вверх) и исчезают вокруг неё, не сдвигая саму кнопку. */}
@@ -156,8 +169,12 @@ export function MobileNav() {
             className={cn(
               // py-3.5 — подложка выше, чтобы «Перезвоните мне» и номер были центрированы по
               // вертикали раскрытой синей подложки (а не прижаты к краям).
-              "relative flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity duration-300",
-              callbackOpen ? "pointer-events-none opacity-0" : "opacity-100" // прячем, пока открыта панель
+              // pointer-events-none ВСЕГДА: зона растянута на всю ширину и лежит в DOM позже
+              // кластера [[contact-fab]] (тот же z-40) — прозрачный div перехватывал тапы по
+              // свёрнутому циклеру, опущенному на её уровень. Кликабельность возвращаем точечно
+              // кнопке и номеру ниже (pointer-events-auto).
+              "pointer-events-none relative flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity duration-300",
+              callbackOpen ? "opacity-0" : "opacity-100" // прячем, пока открыта панель
             )}
           >
             {/* Синяя подложка — отдельный слой под кнопкой: выезжает снизу и исчезает.
@@ -186,26 +203,36 @@ export function MobileNav() {
               }}
               className={cn(
                 // Фиолетово-розовая кнопка с белым текстом (п.1).
-                "relative flex items-center gap-2 rounded-full border bg-gradient-to-r from-fuchsia-600 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-card",
+                // whitespace-nowrap — надпись не переносится на 2 строки; text-[clamp(...)] —
+                // на широком мобильном держит максимум 0.875rem (как раньше text-sm), а при
+                // нехватке ширины (узкие экраны) плавно ужимается до 0.75rem.
+                // pointer-events-auto — возвращаем тапы, отключённые на всей зоне (см. выше);
+                // пока открыта панель обратного звонка, кнопка скрыта — тапы не нужны.
+                "relative flex items-center gap-2 whitespace-nowrap rounded-full border bg-gradient-to-r from-fuchsia-600 to-pink-500 px-4 py-2 text-[clamp(0.75rem,3.4vw,0.875rem)] font-semibold text-white shadow-card",
+                !callbackOpen && "pointer-events-auto",
                 // В правом (сдвинутом) положении — обводка того же фиолетово-розового цвета,
                 // пульсирует расходящимся кольцом (п.1).
                 phoneVisible ? "border-transparent" : "border-fuchsia-500 animate-cb-outline-pulse-magenta"
               )}
             >
-              {/* Иконка трубки вибрирует синхронно с пульсацией кнопки — только когда кнопка
-                  пульсирует (в правом сдвинутом положении, т.е. при скрытой синей подложке) (п.4). */}
-              <PhoneCall className={cn("h-4 w-4", !phoneVisible && "animate-cb-phone-vibrate")} />
+              {/* Иконка трубки вибрирует ВСЕГДА — и при скрытой, и при выдвинутой синей подложке (п.2). */}
+              <PhoneCall className="animate-cb-phone-vibrate h-4 w-4" />
               Перезвоните мне
             </button>
             {/* Номер телефона — уходит ВНИЗ вместе с синей подложкой (те же 300ms/ease-out). */}
             <a
               href={site.phoneHref}
               className={cn(
-                "relative flex items-center gap-2 text-base font-semibold text-primary-fg transition-all duration-300 ease-out",
-                phoneVisible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"
+                // whitespace-nowrap — номер не переносится; text-[clamp(...)] — на широком мобильном
+                // максимум 1rem (как раньше text-base), при нехватке ширины ужимается до 0.8125rem.
+                // top-[3px] — номер опущен на 3px ниже (п.1); иконку телефона убрали (top не зависит
+                // от translate-y, поэтому анимация выезда/ухода вниз сохраняется).
+                "relative top-[3px] flex items-center whitespace-nowrap text-[clamp(0.8125rem,3.9vw,1rem)] font-semibold text-primary-fg transition-all duration-300 ease-out",
+                // pointer-events-auto только у видимого номера (зона целиком pointer-events-none, см. выше).
+                phoneVisible ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"
               )}
             >
-              <Phone className="h-5 w-5" /> {site.phone}
+              {site.phone}
             </a>
           </div>
         )}
@@ -213,7 +240,8 @@ export function MobileNav() {
         {/* Нижняя навигация (только мобильные). id — для замера её высоты панелью обратного звонка. */}
         <nav
           id="mobile-bottom-nav"
-          className="border-t border-hairline bg-bg/90 pb-[env(safe-area-inset-bottom)] shadow-nav backdrop-blur-lg"
+          // pointer-events-auto — возвращаем тапы, отключённые на внешнем контейнере (см. выше).
+          className="pointer-events-auto border-t border-hairline bg-bg/90 pb-[env(safe-area-inset-bottom)] shadow-nav backdrop-blur-lg"
         >
           <div className="grid grid-cols-4">
             {items.map(({ label, href, Icon }) => {

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Headset } from "lucide-react";
 import { site } from "@/data/site";
 import { cn } from "@/lib/utils";
+import { BOOKINGBAR_EVENT } from "@/components/sticky-booking-bar";
 
 // Плавающий кластер способов связи (только мобильные) [[mobile-nav]].
 //
@@ -58,15 +59,37 @@ export function ContactFab({
   callbackOpen,
   collapsedBottom = 80,
   onExpand,
+  contextAvailable = true,
 }: {
   phoneVisible: boolean;
   callbackOpen: boolean;
   collapsedBottom?: number; // нижнее положение кластера (px от низа): центр по кнопке «Перезвоните мне»
   onExpand?: () => void; // вызывается при раскрытии — родитель выдвигает синюю подложку (п.2)
+  contextAvailable?: boolean; // есть ли на странице синяя плашка (главная/каталог); в «Контактах» и пр. — нет
 }) {
   const [expanded, setExpanded] = useState(false);
   const [i, setI] = useState(0); // индекс текущего мессенджера в свёрнутой циклер-кнопке
   const [bounceTick, setBounceTick] = useState(0); // счётчик прыжков — растёт при прокрутке (п.2)
+  // Нижнее положение (px), когда снизу показан бар бронирования [[sticky-booking-bar]]: кластер
+  // поднимается над ним. null — бар скрыт, используем обычное положение. (п.1)
+  const [barBottom, setBarBottom] = useState<number | null>(null);
+
+  // Слушаем показ/скрытие бара бронирования на странице тура. Целевую высоту считаем от самого бара:
+  // его computed `bottom` (63px + safe-area, не зависит от transform) + высота + зазор 12px.
+  useEffect(() => {
+    const onBar = (e: Event) => {
+      const visible = (e as CustomEvent<boolean>).detail;
+      const bar = document.getElementById("tour-bookingbar");
+      if (!visible || !bar) {
+        setBarBottom(null);
+        return;
+      }
+      const base = parseFloat(getComputedStyle(bar).bottom) || 0;
+      setBarBottom(base + bar.offsetHeight + 12);
+    };
+    window.addEventListener(BOOKINGBAR_EVENT, onBar);
+    return () => window.removeEventListener(BOOKINGBAR_EVENT, onBar);
+  }, []);
 
   // Циклическая смена иконки каждые 2с — только пока ряд свёрнут и панель обратного звонка закрыта.
   useEffect(() => {
@@ -75,18 +98,52 @@ export function ContactFab({
     return () => window.clearInterval(t);
   }, [expanded, callbackOpen]);
 
+  // Отложенное раскрытие: тап по циклеру при СКРЫТОЙ подложке сначала выдвигает её, и только
+  // после выезда циклер раскрывается сам (см. эффект ниже).
+  const [pendingExpand, setPendingExpand] = useState(false);
+
   // Раскрытие ряда мессенджеров — ТОЛЬКО по тапу на свёрнутый циклер (п.2). Кнопка «Чат» больше
-  // не переключает ряд. При раскрытии просим родителя выдвинуть синюю подложку.
+  // не переключает ряд. В разделах БЕЗ синей плашки (contextAvailable=false, например «Контакты»)
+  // раскрываемся сразу — ждать выезда нечего. Иначе: подложка уже выдвинута — раскрываемся сразу;
+  // ещё нет — просим родителя выдвинуть её (onExpand → pinned), а раскрытие откладываем до конца
+  // её выезда (п.3): подложка выезжает, затем циклер разворачивается автоматически.
   const expand = () => {
-    setExpanded(true);
+    if (!contextAvailable) {
+      setExpanded(true);
+      return;
+    }
     onExpand?.();
+    if (phoneVisible) setExpanded(true);
+    else setPendingExpand(true);
   };
 
-  // Строгое правило (п.1): как только синяя плашка задвигается вниз (phoneVisible === false),
-  // ряд мессенджеров обязательно сворачивается.
+  // Ждём, пока подложка реально выдвинется (phoneVisible → true), затем даём её анимации выезда
+  // (300ms) завершиться — и раскрываем ряд мессенджеров.
   useEffect(() => {
-    if (!phoneVisible) setExpanded(false);
+    if (!pendingExpand || !phoneVisible) return;
+    const t = setTimeout(() => {
+      setExpanded(true);
+      setPendingExpand(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [pendingExpand, phoneVisible]);
+
+  // Строгое правило (п.1): как только синяя плашка задвигается вниз (phoneVisible === false),
+  // ряд мессенджеров обязательно сворачивается, а отложенное раскрытие отменяется.
+  useEffect(() => {
+    if (!phoneVisible) {
+      setExpanded(false);
+      setPendingExpand(false);
+    }
   }, [phoneVisible]);
+
+  // Смена типа раздела (синяя плашка появилась/пропала, например «Контакты» ↔ главная) — начинаем
+  // со свёрнутого состояния, как и родитель, сбрасывающий pinned при смене пути. Иначе ряд,
+  // раскрытый в «Контактах», оставался бы раскрытым на главной при задвинутой плашке.
+  useEffect(() => {
+    setExpanded(false);
+    setPendingExpand(false);
+  }, [contextAvailable]);
 
   // Пока ряд раскрыт — прокрутка страницы вызывает «подпрыгивание» иконок, но НЕ сразу, а спустя
   // случайные 2–4с (п.2): то 2, то 4, то 3 — каждый раз по-разному. Пока прыжок запланирован,
@@ -121,7 +178,7 @@ export function ContactFab({
         // Нижнее положение (подложка скрыта) — collapsedBottom: замеряется в [[mobile-nav]] так,
         // чтобы центр кластера совпал с центром кнопки «Перезвоните мне». При видимой подложке
         // уезжает выше (140px), чтобы её не перекрывать. На desktop — lg:!bottom-6 (перебивает inline).
-        style={{ bottom: phoneVisible ? 140 : collapsedBottom }}
+        style={{ bottom: barBottom ?? (phoneVisible ? 140 : collapsedBottom) }}
         className={cn(
           "fixed right-4 z-40 transition-all duration-300 lg:!bottom-6",
           callbackOpen && "pointer-events-none opacity-0"

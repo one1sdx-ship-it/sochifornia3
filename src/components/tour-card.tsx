@@ -79,6 +79,12 @@ export function TourCard({ tour }: { tour: Tour }) {
   // тезисы для чипов-пилюль: сортируем по длине — аккуратная «лесенка» при выравнивании вправо
   const highlights = [...tour.highlights].sort((a, b) => b.length - a.length);
 
+  // Общие классы правой кнопки «Бронь»: синеет при ховере (десктоп) и через 2с в центре (мобайл).
+  const bookCls = cn(
+    "transition-colors duration-300 active:scale-95 group-hover:bg-primary group-hover:text-primary-fg",
+    ctaBlue && "bg-primary text-primary-fg"
+  );
+
   return (
     <div
       ref={cardRef}
@@ -200,24 +206,23 @@ export function TourCard({ tour }: { tour: Tour }) {
                 stacking context, поэтому z-10 на вложенной кнопке не срабатывал — клик проваливался
                 на растянутую ссылку карточки (z-0). Поднимаем над ссылкой весь блок, а обе половины
                 делаем самостоятельными кликабельными элементами. */}
-            <span className="animate-cta-breathe relative z-10 inline-flex shrink-0 overflow-hidden rounded-md text-sm font-medium">
-              {/* «Смотреть» — обычный просмотр экскурсии. */}
+            {/* «Косой сплит» (вариант C): одна капсула, разрезанная диагональю на две половины —
+                «Смотреть» слева, «Бронь» справа. */}
+            <span className="animate-cta-breathe relative z-10 flex h-10 shrink-0 overflow-hidden rounded-md text-sm font-medium">
               <Link
                 href={`/tours/${tour.slug}`}
-                className="bg-primary/10 px-3.5 py-2 text-primary active:scale-95"
+                className="flex items-center bg-primary/10 pl-4 pr-5 text-primary active:scale-95"
+                style={{ clipPath: "polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%)" }}
               >
                 Смотреть
               </Link>
-              {/* «Выбрать» — переход внутрь + мгновенное открытие полноэкранной панели заявки. */}
               <button
                 type="button"
                 onClick={handleSelect}
-                className={cn(
-                  "border-l border-primary/20 bg-primary/10 px-3.5 py-2 text-primary transition-colors duration-300 active:scale-95 group-hover:bg-primary group-hover:text-primary-fg",
-                  ctaBlue && "bg-primary text-primary-fg"
-                )}
+                className={cn("-ml-3.5 flex items-center bg-primary/10 pl-5 pr-4 text-primary", bookCls)}
+                style={{ clipPath: "polygon(14px 0, 100% 0, 100% 100%, 0 100%)" }}
               >
-                Выбрать
+                Бронь
               </button>
             </span>
           </div>

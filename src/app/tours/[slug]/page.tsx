@@ -2,16 +2,18 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
-  Check, X as XIcon, Clock, Users, Star, MapPin, Backpack, ChevronRight, Calendar,
+  Clock, Users, Star, MapPin, Backpack, ChevronRight, Calendar,
 } from "lucide-react";
 import { getPublishedTours, getPublishedTourBySlug, getPublishedSlugs, getTourEntity, toLegacyTour, type TourEntity } from "@/data/tours-db";
 import { getCurrentUser, canEditTour } from "@/lib/session";
-import { DynamicIcon } from "@/components/dynamic-icon";
 import { TourEditLauncher, type EditorTour } from "@/components/admin/tour-editor/tour-edit-launcher";
+import { InlineEditProvider } from "@/components/admin/tour-editor/inline-edit";
+import {
+  EditableMetaText, EditablePrice, TourBlocksGrid, TourBringList, TourChecklistCard, TourProgram,
+} from "@/components/admin/tour-editor/editable-sections";
 import { reviews, faqs, guides } from "@/data/content";
 import { categories } from "@/data/types";
 import { site } from "@/data/site";
-import { formatPrice } from "@/lib/utils";
 import { TourGallery } from "@/components/tour-gallery";
 import { TourHeroCarousel } from "@/components/tour-hero-carousel";
 import { LeadForm } from "@/components/lead-form";
@@ -84,6 +86,8 @@ export default async function TourPage({
   if (entity.status !== "PUBLISHED" && !canEdit) notFound();
 
   const tour = toLegacyTour(entity);
+  // Единый набор данных для inline-правки и клиентских секций (без правки — просто данные).
+  const editor = buildEditorTour(entity);
   const allTours = await getPublishedTours();
   const category = categories.find((c) => c.id === tour.category);
   const related = allTours.filter((t) => t.category === tour.category && t.slug !== tour.slug).slice(0, 3);
@@ -110,7 +114,9 @@ export default async function TourPage({
   };
 
   return (
-    <>
+    // Провайдер быстрой inline-правки: без прав отдаёт «пустой» контекст,
+    // и все Editable-компоненты рендерят обычный статичный текст.
+    <InlineEditProvider tour={canEdit ? editor : null}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* Плашка для редактора: тур не опубликован и виден только ему */}
@@ -145,8 +151,8 @@ export default async function TourPage({
                 {tour.format === "group" ? "Групповая" : "Индивидуальная"}
               </span>
             </div>
-            <h1 className="mt-4 font-display text-3xl font-bold leading-tight sm:text-5xl">{tour.title}</h1>
-            <p className="mt-4 max-w-2xl text-lg text-white/90">{tour.excerpt}</p>
+            <EditableMetaText field="title" as="h1" className="mt-4 font-display text-3xl font-bold leading-tight sm:text-5xl" value={tour.title} placeholder="Название экскурсии" />
+            <EditableMetaText field="excerpt" as="p" multiline className="mt-4 max-w-2xl text-lg text-white/90" value={tour.excerpt} placeholder="Короткое описание" />
             <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
               <span className="inline-flex items-center gap-1.5"><Star className="h-4 w-4 fill-gold text-gold" /> {tour.rating} · {tour.reviewsCount} отзывов</span>
               <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4" /> {tour.durationHours} часов</span>
@@ -161,31 +167,13 @@ export default async function TourPage({
         <div className="min-w-0 space-y-14">
           {/* Преимущества */}
           <Reveal>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {entity.blocks.map((b) => (
-                <div key={b.id} className="rounded-lg border border-hairline bg-surface p-4">
-                  <DynamicIcon name={b.icon} iconType={b.iconType} className="h-5 w-5 text-primary" />
-                  <p className="mt-2 text-sm font-medium text-ink">{b.title}</p>
-                </div>
-              ))}
-            </div>
+            <TourBlocksGrid blocks={editor.blocks} />
           </Reveal>
 
           {/* Программа */}
           <Reveal as="section">
             <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Программа экскурсии</h2>
-            <ol className="relative mt-6 space-y-6 pl-[26px] before:absolute before:left-[4px] before:top-0 before:bottom-0 before:w-0.5 before:bg-hairline before:content-['']">
-              {tour.program.map((step, i) => (
-                <li key={i} className="relative">
-                  <span className="absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full border-2 border-primary bg-bg">
-                    <span className="h-2 w-2 rounded-full bg-primary" />
-                  </span>
-                  <p className="text-sm font-semibold text-primary">{step.time}</p>
-                  <h3 className="mt-0.5 font-display text-lg font-semibold text-ink">{step.title}</h3>
-                  <p className="mt-1 text-body">{step.text}</p>
-                </li>
-              ))}
-            </ol>
+            <TourProgram program={editor.program} />
           </Reveal>
 
           {/* Маршрут (карта-заглушка) */}
@@ -202,26 +190,8 @@ export default async function TourPage({
 
           {/* Что входит / не входит */}
           <Reveal as="section" className="grid gap-6 sm:grid-cols-2">
-            <div className="rounded-lg border border-hairline bg-surface p-6">
-              <h3 className="font-display text-lg font-semibold text-ink">Что входит</h3>
-              <ul className="mt-4 space-y-3">
-                {tour.included.map((item) => (
-                  <li key={item} className="flex items-start gap-2.5 text-sm text-body">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" /> {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-lg border border-hairline bg-surface p-6">
-              <h3 className="font-display text-lg font-semibold text-ink">Не входит</h3>
-              <ul className="mt-4 space-y-3">
-                {tour.excluded.map((item) => (
-                  <li key={item} className="flex items-start gap-2.5 text-sm text-body">
-                    <XIcon className="mt-0.5 h-4 w-4 shrink-0 text-error" /> {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <TourChecklistCard kind="INCLUDED" title="Что входит" items={editor.included} />
+            <TourChecklistCard kind="EXCLUDED" title="Не входит" items={editor.excluded} />
           </Reveal>
 
           {/* Что взять с собой */}
@@ -229,13 +199,7 @@ export default async function TourPage({
             <h2 className="flex items-center gap-2 font-display text-2xl font-bold text-ink sm:text-3xl">
               <Backpack className="h-7 w-7 text-primary" /> Что взять с собой
             </h2>
-            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-              {entity.listItems.filter((i) => i.kind === "BRING").map((it) => (
-                <li key={it.id} className="flex items-start gap-2.5 rounded-lg bg-surface-2 px-4 py-3 text-sm text-body">
-                  <DynamicIcon name={it.icon ?? "Check"} iconType={it.iconType} className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> {it.text}
-                </li>
-              ))}
-            </ul>
+            <TourBringList items={editor.bring} />
           </Reveal>
 
           {/* Галерея */}
@@ -270,7 +234,7 @@ export default async function TourPage({
               <div className="flex items-end justify-between">
                 <div>
                   <span className="text-sm text-muted">Стоимость от</span>
-                  <p className="font-display text-3xl font-bold text-ink">{formatPrice(tour.price)}</p>
+                  <EditablePrice value={tour.price} className="font-display text-3xl font-bold text-ink" />
                   <span className="text-sm text-muted">за человека</span>
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
@@ -313,7 +277,7 @@ export default async function TourPage({
       <LeadOverlay tourTitle={tour.title} />
 
       {/* Mobile-first inline-редактор — только для тех, кому можно править этот тур */}
-      {canEdit && <TourEditLauncher tour={buildEditorTour(entity)} />}
-    </>
+      {canEdit && <TourEditLauncher tour={editor} />}
+    </InlineEditProvider>
   );
 }

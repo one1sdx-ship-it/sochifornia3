@@ -1,15 +1,17 @@
 "use client";
 
 // Mobile-first редактор экскурсии: плавающая кнопка → меню разделов → нижние панели.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Pencil, Type, LayoutGrid, ListOrdered, Check, X as XIcon, Backpack, Wallet,
   Plus, Trash2, ArrowUp, ArrowDown, ChevronRight, Images, Image as ImageIcon, Loader2,
 } from "lucide-react";
 import { DynamicIcon } from "@/components/dynamic-icon";
+import { cn } from "@/lib/utils";
 import { Sheet } from "./sheet";
 import { useAutosave, flushQueue, uploadImage, type SavePayload } from "./use-autosave";
+import { useInlineEdit } from "./inline-edit";
 
 // ── Типы данных редактора (сериализуемые, приходят с сервера) ──────────
 export type EditorBlock = { icon: string; iconType: "LUCIDE" | "CUSTOM"; title: string };
@@ -85,6 +87,27 @@ function IconUpload({ onUploaded }: { onUploaded: (url: string) => void }) {
 export function TourEditLauncher({ tour }: { tour: EditorTour }) {
   const [open, setOpen] = useState<Section | null>(null);
   const router = useRouter();
+  const inline = useInlineEdit();
+
+  // Долгое удержание карандаша (0.5с, только палец/стилус — мобильный сценарий)
+  // включает/выключает режим мини-карандашей (inline-правка текста на странице).
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longFired = useRef(false);
+
+  function pressStart(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (e.pointerType === "mouse") return;
+    longFired.current = false;
+    pressTimer.current = setTimeout(() => {
+      longFired.current = true;
+      inline.toggle();
+    }, 500);
+  }
+  function pressCancel() {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  }
 
   // При возврате сети — досохраняем очередь.
   useEffect(() => {
@@ -113,13 +136,56 @@ export function TourEditLauncher({ tour }: { tour: EditorTour }) {
 
   return (
     <>
-      {/* Плавающая кнопка в зоне большого пальца */}
+      {/* Компактная кнопка редактирования: как кнопка «Наверх» — торчит из-за левого края экрана
+          (скругление только справа, без левой рамки), только иконка-карандаш, без подписи.
+          Стоит выше кнопки «Наверх» (bottom 147 → 212) [[mobile-nav]].
+          Короткий тап — меню разделов; удержание 0.5с (палец) — режим мини-карандашей. */}
       <button
-        onClick={() => setOpen("hub")}
-        className="fixed bottom-4 right-4 z-[90] flex items-center gap-2 rounded-full bg-primary px-5 py-3.5 text-sm font-semibold text-white shadow-lg active:scale-95"
+        onClick={() => {
+          // После долгого удержания click всё равно прилетает — глотаем его.
+          if (longFired.current) {
+            longFired.current = false;
+            return;
+          }
+          setOpen("hub");
+        }}
+        onPointerDown={pressStart}
+        onPointerUp={pressCancel}
+        onPointerLeave={pressCancel}
+        onPointerCancel={pressCancel}
+        onContextMenu={(e) => e.preventDefault()}
+        aria-label="Редактировать"
+        className={cn(
+          "fixed bottom-[212px] left-0 z-[90] flex h-12 w-12 touch-none select-none items-center justify-center rounded-r-md border border-l-0 border-hairline shadow-card active:scale-95 [-webkit-touch-callout:none]",
+          inline.active ? "bg-primary text-white" : "bg-surface text-primary",
+        )}
       >
-        <Pencil className="h-5 w-5" /> Редактировать
+        <Pencil className="h-5 w-5" />
       </button>
+
+      {/* Плашка статуса режима мини-карандашей — над кнопкой, у того же края */}
+      {inline.active && (
+        <div
+          className={cn(
+            "fixed bottom-[266px] left-0 z-[90] rounded-r-md border border-l-0 border-hairline bg-surface px-2.5 py-1.5 text-[11px] font-medium shadow-card",
+            inline.status === "error"
+              ? "text-error"
+              : inline.status === "saving"
+                ? "text-muted"
+                : inline.status === "saved"
+                  ? "text-success"
+                  : "text-primary",
+          )}
+        >
+          {inline.status === "saving"
+            ? "Сохраняется…"
+            : inline.status === "error"
+              ? "Ошибка — сохраним при сети"
+              : inline.status === "saved"
+                ? "Сохранено ✓"
+                : "Правка текста"}
+        </div>
+      )}
 
       {/* Меню разделов */}
       <Sheet open={open === "hub"} onClose={closeAll} title="Что редактируем?">

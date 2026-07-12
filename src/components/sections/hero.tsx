@@ -34,9 +34,18 @@ export function Hero() {
             <TyphoonWord /> эмоций в Сочи
           </h1>
 
-          <p className="mt-6 max-w-xl text-lg text-white/90 sm:text-xl">
+          {/* text-[clamp(...)] — на широком мобильном держит максимум 1.125rem (как было text-lg),
+              а при нехватке ширины плавно ужимается до 0.95rem. Перенос строк оставлен (фраза длинная),
+              на ≥640px размер по-прежнему text-xl (1.25rem). */}
+          <p className="mt-6 max-w-xl text-[clamp(0.95rem,4.6vw,1.125rem)] text-white/90 sm:text-xl">
             Накроет волной{" "}
-            <span className="animate-subtle-shake font-medium text-[#5CC6E4]">твоих лучших впечатлений</span>
+            {/* Внешний span делает перенесённую часть блоком во всю ширину и прижимает вправо на
+                мобильном; на ≥640px возвращаем inline-поток. Выравнивание вынесено на обёртку, т.к.
+                у .animate-subtle-shake задан display:inline-block (globals.css) вне слоёв Tailwind —
+                он перебивал наш block, и text-right не срабатывал. */}
+            <span className="block text-right sm:inline sm:text-left">
+              <span className="animate-subtle-shake font-medium text-[#5CC6E4]">твоих лучших впечатлений</span>
+            </span>
           </p>
 
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
