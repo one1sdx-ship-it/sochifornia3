@@ -175,8 +175,13 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
 
   // Как только телефон введён полностью — раскрываем форму, даже если имя пустое
   // (подпись-вопрос и поле имени уезжают, появляются заголовок времени и 5 кнопок).
+  // Дополнительно снимаем фокус с активного поля ввода: на мобильных это сразу закрывает
+  // экранную клавиатуру → блок «Когда вам удобно…» и 5 кнопок плавно появляются без лишнего тапа.
   useEffect(() => {
-    if (phoneOk) setRevealed(true);
+    if (!phoneOk) return;
+    setRevealed(true);
+    const ae = document.activeElement;
+    if (ae instanceof HTMLElement && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) ae.blur();
   }, [phoneOk]);
 
   // Один раз при раскрытии формы на шаге пресетов (видны телефон + 5 кнопок) — плавно прокручиваем
