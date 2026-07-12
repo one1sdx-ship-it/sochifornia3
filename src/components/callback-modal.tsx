@@ -157,6 +157,11 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
   // появляется блок времени и подвал. Возврат фокуса в поле имени (или кнопка «Изменить») —
   // сворачивает обратно.
   const [revealed, setRevealed] = useState(false);
+  // Открыта ли экранная клавиатура (мобилки). Пока телефон введён корректно и клавиатура поднята —
+  // прячем заголовок «Когда вам удобно…» и блок из 5 кнопок; при закрытии клавиатуры они плавно
+  // появляются, при повторном открытии — снова скрываются. Определяем по «схлопыванию» визуального
+  // вьюпорта: клавиатура забирает существенную часть высоты окна.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   // Однократная авто-прокрутка вниз, когда форма раскрылась (видны телефон + 5 кнопок), чтобы были
   // видны нижние кнопки и подвал. Сбрасывается при каждом открытии панели.
@@ -419,6 +424,26 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Слежение за экранной клавиатурой через visualViewport: клавиатура уменьшает высоту визуального
+  // вьюпорта относительно окна. Порог 120px отсекает адресную строку и мелкие сдвиги.
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const check = () => setKeyboardOpen(window.innerHeight - vv.height > 120);
+    check();
+    vv.addEventListener("resize", check);
+    vv.addEventListener("scroll", check);
+    return () => {
+      vv.removeEventListener("resize", check);
+      vv.removeEventListener("scroll", check);
+    };
+  }, [open]);
+
+  // Пока телефон введён корректно и клавиатура открыта — держим блок выбора времени свёрнутым
+  // (плавно уезжает), чтобы не мешать вводу; после закрытия клавиатуры он так же плавно появляется.
+  const timeRevealed = revealed && !(keyboardOpen && phoneOk);
 
   // Класс анимации активной группы.
   const animClass =
@@ -696,13 +721,13 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div
                   className={cn(
                     "shrink-0 overflow-hidden transition-[max-height,opacity,margin] duration-500 ease-out",
-                    revealed ? "mt-8 max-h-20 opacity-100" : "mt-0 max-h-0 opacity-0"
+                    timeRevealed ? "mt-8 max-h-20 opacity-100" : "mt-0 max-h-0 opacity-0"
                   )}
                 >
                   <div
                     className={cn(
                       "text-center text-[15px] font-medium transition-transform duration-500 ease-out",
-                      revealed ? "translate-x-0" : "translate-x-[130%]"
+                      timeRevealed ? "translate-x-0" : "translate-x-[130%]"
                     )}
                   >
                     <span className="block text-ink">
@@ -717,13 +742,13 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div
                   className={cn(
                     "mb-auto shrink-0 overflow-hidden transition-[max-height,opacity,margin] duration-500 ease-out",
-                    revealed ? "mt-3 max-h-[560px] opacity-100" : "mt-0 max-h-0 opacity-0"
+                    timeRevealed ? "mt-3 max-h-[560px] opacity-100" : "mt-0 max-h-0 opacity-0"
                   )}
                 >
                   <div
                     className={cn(
                       "transition-transform duration-500 ease-out",
-                      revealed ? "translate-y-0" : "translate-y-full"
+                      timeRevealed ? "translate-y-0" : "translate-y-full"
                     )}
                   >
                     {/* overflow-x-clip: прячем горизонтальный уезд кнопок при анимации слайда.
