@@ -38,6 +38,13 @@ model User {
   createdTours Tour[]     @relation("TourCreatedBy")
   updatedTours Tour[]     @relation("TourUpdatedBy")
   auditLogs    AuditLog[]
+
+  // ── Чат с клиентами ──
+  chatDisplayName String  @default("") // имя, которое видит клиент в чате (задаёт сам сотрудник)
+  chatAvatarUrl   String  @default("") // аватар сотрудника в чате
+  telegramChatId  String? // личный TG-чат сотрудника с ботом (для уведомлений о новых сообщениях)
+  tgLinkToken     String? @unique // токен deep-link'а t.me/бот?start=emp_<token> (создаётся лениво в коде)
+  chatMessages    ChatMessage[]
 }
 
 // Таблицы адаптера Auth.js (для входа через Google и хранения сессий)
@@ -124,6 +131,11 @@ model Tour {
   image         String   @default("") // обложка (id-градиент или url)
 
   sortOrder Int @default(0) // порядок в списках
+
+  // «Место встречи» (бывший раздел «Маршрут» на странице тура) + гео для отправки картой в чат
+  meetingAddress String @default("") // человекочитаемый адрес точки сбора
+  meetingLat     Float? // широта
+  meetingLng     Float? // долгота
 
   // Аудит/авторство
   createdById String?
@@ -253,4 +265,116 @@ model AuditLog {
   @@index([tourId])
   @@index([userId])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Онлайн-чат с клиентами (виджет на сайте + /admin/chats + TG-бот)
+// ─────────────────────────────────────────────────────────────
+
+// Кто написал сообщение.
+enum ChatSender {
+  CLIENT // посетитель сайта
+  STAFF // сотрудник (из админки)
+  BOT // автоответы/приветствия/промокод
+}
+
+// Тип содержимого сообщения.
+enum ChatMsgType {
+  TEXT // обычный текст
+  IMAGE // фото (attachmentUrl)
+  VOICE // голосовое (attachmentUrl)
+  TOUR_CARD // карточка экскурсии (meta: slug/title/price/image)
+  LOCATION // точка на карте (meta: lat/lng/label)
+  PROMO // промокод −5% (text = код)
+  SYSTEM // служебное (вопрос про Telegram при отсутствии и т.п.)
+}
+
+// Диалог: один на анонимного клиента (ID хранится у него в localStorage).
+// История ОБЩАЯ: все сотрудники видят один и тот же диалог с клиентом.
+model ChatConversation {
+  id       String @id @default(cuid())
+  clientId String @unique // анонимный ID из localStorage клиента
+
+  clientName  String @default("") // имя из формы (необязательное)
+  clientPhone String @default("") // телефон из формы (обязательный, E.164)
+
+  currentTourSlug String @default("") // с какой страницы тура открыт чат (контекст для сотрудника)
+
+  // «Продолжить в Telegram»: токен для deep-link t.me/бот?start=c_<token>;
+  // после /start клиента сюда пишется его TG-чат — ответы дублируются в Telegram.
+  tgLinkToken      String  @unique @default(cuid())
+  clientTelegramId String? // TG-чат клиента (null — не подключал)
+
+  // Промокод −5% (падает в чат через N минут после вопроса без брони).
+  promoCode   String    @default("")
+  promoSentAt DateTime?
+
+  // Присутствие и индикаторы.
+  lastClientSeenAt DateTime  @default(now()) // последний поллинг виджета (для «клиент ушёл >5 мин»)
+  lastOpenAt       DateTime? // последний поллинг с ОТКРЫТЫМ окном чата (для push: окно закрыто → шлём push)
+  clientTypingAt   DateTime? // клиент печатает (свежее 4с = печатает)
+  staffTypingAt    DateTime? // сотрудник печатает
+  staffTypingName  String    @default("") // имя печатающего сотрудника
+
+  absenceAskedAt DateTime? // задан ли уже вопрос «связаться в Telegram, если вас нет?»
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages    ChatMessage[]
+  viewedTours ChatViewedTour[]
+  pushSubs    ChatPushSub[]
+
+  @@index([updatedAt])
+}
+
+model ChatMessage {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  sender ChatSender
+  type   ChatMsgType @default(TEXT)
+
+  // Автор-сотрудник (для STAFF): имя/аватар клиент видит в шапке и у пузыря.
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  text          String @default("") // текст / код промо / подпись
+  attachmentUrl String @default("") // фото или голосовое (Vercel Blob / /uploads)
+  meta          Json? // TOUR_CARD: {slug,title,price,image,duration}; LOCATION: {lat,lng,label}
+
+  // Статусы: «доставлено» = запись создана; «прочитано» = противоположная сторона открыла чат.
+  readByClient Boolean @default(false)
+  readByStaff  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// Экскурсии, которые клиент просматривал (сотрудник видит контекст интересов).
+model ChatViewedTour {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  slug           String
+  title          String   @default("")
+  viewedAt       DateTime @default(now())
+
+  @@unique([conversationId, slug])
+  @@index([conversationId])
+}
+
+// Подписка на браузерные push-уведомления (Web Push, VAPID).
+model ChatPushSub {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  endpoint       String   @unique
+  p256dh         String
+  auth           String
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId])
 }

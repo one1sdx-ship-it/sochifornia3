@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
-  Clock, Users, Star, MapPin, Backpack, ChevronRight, Calendar,
+  Clock, Users, Star, Backpack, ChevronRight, Calendar,
 } from "lucide-react";
+import { MeetingPoint } from "@/components/meeting-point";
 import { getPublishedTours, getPublishedTourBySlug, getPublishedSlugs, getTourEntity, toLegacyTour, type TourEntity } from "@/data/tours-db";
 import { getCurrentUser, canEditTour } from "@/lib/session";
 import { TourEditLauncher, type EditorTour } from "@/components/admin/tour-editor/tour-edit-launcher";
@@ -176,16 +177,10 @@ export default async function TourPage({
             <TourProgram program={editor.program} />
           </Reveal>
 
-          {/* Маршрут (карта-заглушка) */}
+          {/* Место встречи (бывший «Маршрут»): точка сбора на карте, задаётся в админке */}
           <Reveal as="section">
-            <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Маршрут</h2>
-            <div className="mt-6 flex aspect-[16/8] w-full items-center justify-center rounded-lg border border-dashed border-hairline bg-surface-2 text-center">
-              <div className="px-6">
-                <MapPin className="mx-auto h-8 w-8 text-primary" />
-                <p className="mt-2 font-medium text-ink">Интерактивная карта маршрута</p>
-                <p className="text-sm text-muted">Появится здесь после интеграции с картами</p>
-              </div>
-            </div>
+            <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Место встречи</h2>
+            <MeetingPoint address={entity.meetingAddress} lat={entity.meetingLat} lng={entity.meetingLng} />
           </Reveal>
 
           {/* Что входит / не входит */}

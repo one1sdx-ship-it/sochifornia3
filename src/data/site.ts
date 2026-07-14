@@ -11,6 +11,7 @@ export const site = {
   phoneHref: "tel:+79862228228",
   whatsapp: "https://wa.me/79862228228",
   telegram: "https://t.me/sochiforniatravel",
+  max: "https://max.ru/sochiforniatravel", // заглушка — заменить реальной ссылкой MAX
   workingHours: "Ежедневно с 9:00 до 21:00",
   address: "г. Сочи, ул. Навагинская, 9 (заглушка)",
   email: "info@sochifornia.ru",

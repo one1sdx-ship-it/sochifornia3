@@ -685,7 +685,7 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                   {/* 2. Телефон — обязательно. Выбор страны флаг-дропдауном + форматирование и
                        валидация из libphonenumber-js (для РФ — строго мобильный 9XX). */}
                   <label className="mt-6 block">
-                    <span className="mb-1.5 block text-center text-sm font-medium text-ink">Номер телефона:</span>
+                    <span className="mb-1.5 block text-center text-[1.05rem] font-medium text-ink">Номер телефона:</span>
                     <PhoneInput
                       country={country}
                       national={national}

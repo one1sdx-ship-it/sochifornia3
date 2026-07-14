@@ -19,6 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </Link>
             <nav className="flex items-center gap-3 text-sm">
               <Link href="/admin/tours" className="text-ink hover:text-primary">Экскурсии</Link>
+              <Link href="/admin/chats" className="text-ink hover:text-primary">Чаты</Link>
               {user.role === "ADMIN" && (
                 <Link href="/admin/journal" className="text-ink hover:text-primary">Журнал</Link>
               )}

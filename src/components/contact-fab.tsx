@@ -5,15 +5,16 @@ import { Headset } from "lucide-react";
 import { site } from "@/data/site";
 import { cn } from "@/lib/utils";
 import { BOOKINGBAR_EVENT } from "@/components/sticky-booking-bar";
+import { CHAT_UNREAD_EVENT, openChat } from "@/components/chat/chat-store";
 
 // Плавающий кластер способов связи (только мобильные) [[mobile-nav]].
 //
 // Пилюля «Чат с оператором» видна ВСЕГДА (оранжевая, крайняя справа). По требованию (п.2) тап по
 // ней НЕ управляет рядом мессенджеров. Левее неё:
 //   • СВЁРНУТО — одна круглая кнопка-циклер: каждые 2с сменяет мессенджер WhatsApp → Telegram →
-//     Почта (новая иконка «прилетает», крутясь — cb-fab-swap). Она видна всегда, пока ряд свёрнут.
+//     MAX (новая иконка «прилетает», крутясь — cb-fab-swap). Она видна всегда, пока ряд свёрнут.
 //   • РАСКРЫТО (только тап по свёрнутому циклеру, п.2) — циклер прячется, а вместо него выезжают
-//     ВЛЕВО три отдельные кнопки: WhatsApp, Telegram, Почта.
+//     ВЛЕВО три отдельные кнопки: WhatsApp, Telegram, MAX.
 // Ряд принудительно сворачивается, как только синяя плашка задвигается вниз (п.1).
 //
 // Пока ряд раскрыт, любая прокрутка страницы заставляет иконки легонько подпрыгивать на месте
@@ -32,23 +33,23 @@ const TelegramIcon = (
   </svg>
 );
 
-const GmailIcon = (
-  <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" aria-hidden="true">
-    <path d="M4 18V8l8 5 8-5v10" stroke="#EA4335" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+// Официальный логотип мессенджера MAX (фирменная градиентная плитка).
+const MaxIcon = (
+  // eslint-disable-next-line @next/next/no-img-element
+  <img src="/max-logo.png" alt="" className="h-8 w-8 rounded-[8px]" />
 );
 
 type Channel = { key: string; label: string; href: string; wrap: string; icon: ReactNode };
 
 // Набор для раскрытого ряда. Порядок в массиве + flex-row-reverse дают визуальный порядок
-// слева-направо: Почта, Telegram, WhatsApp (WhatsApp — ближе всех к «Чату»).
+// слева-направо: MAX, Telegram, WhatsApp (WhatsApp — ближе всех к «Чату»).
 const CHANNELS: Channel[] = [
   { key: "whatsapp", label: "Написать в WhatsApp", href: site.whatsapp, wrap: "bg-[#25D366] text-white", icon: WhatsAppIcon },
   { key: "telegram", label: "Написать в Telegram", href: site.telegram, wrap: "bg-[#229ED9] text-white", icon: TelegramIcon },
-  { key: "email", label: "Написать на почту", href: `mailto:${site.email}`, wrap: "bg-white ring-1 ring-hairline", icon: GmailIcon },
+  { key: "max", label: "Написать в MAX", href: site.max, wrap: "bg-white ring-1 ring-hairline", icon: MaxIcon },
 ];
 
-// В свёрнутом виде по кругу циклятся все мессенджеры: WhatsApp / Telegram / Почта.
+// В свёрнутом виде по кругу циклятся все мессенджеры: WhatsApp / Telegram / MAX.
 const CYCLE = CHANNELS;
 
 // База круглой кнопки-иконки.
@@ -69,6 +70,14 @@ export function ContactFab({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [i, setI] = useState(0); // индекс текущего мессенджера в свёрнутой циклер-кнопке
+  const [chatUnread, setChatUnread] = useState(0); // бейдж непрочитанных на кнопке «Чат»
+
+  // Бейдж с числом непрочитанных сообщений чата (шлёт [[chat-widget]]).
+  useEffect(() => {
+    const onUnread = (e: Event) => setChatUnread((e as CustomEvent<number>).detail ?? 0);
+    window.addEventListener(CHAT_UNREAD_EVENT, onUnread);
+    return () => window.removeEventListener(CHAT_UNREAD_EVENT, onUnread);
+  }, []);
   const [bounceTick, setBounceTick] = useState(0); // счётчик прыжков — растёт при прокрутке (п.2)
   // Нижнее положение (px), когда снизу показан бар бронирования [[sticky-booking-bar]]: кластер
   // поднимается над ним. null — бар скрыт, используем обычное положение. (п.1)
@@ -191,10 +200,18 @@ export function ContactFab({
           <button
             type="button"
             aria-label="Чат с оператором"
-            className="relative flex h-12 items-center gap-1.5 rounded-2xl bg-orange-500 px-3.5 text-white shadow-float ring-2 ring-white/50 active:scale-95"
+            onClick={openChat}
+            // Привлечение внимания: лёгкое покачивание раз в 13с, затем лёгкий пульс — циклом.
+            className="animate-chat-attn relative flex h-12 items-center gap-1.5 rounded-2xl bg-orange-500 px-3.5 text-white shadow-float ring-2 ring-white/50 active:scale-95"
           >
             <Headset className="h-5 w-5" />
             <span className="text-sm font-semibold">Чат</span>
+            {/* Бейдж непрочитанных ответов */}
+            {chatUnread > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-error px-1 text-[11px] font-bold text-white ring-2 ring-white">
+                {chatUnread > 9 ? "9+" : chatUnread}
+              </span>
+            )}
           </button>
 
           {/* Раскрытый ряд из трёх кнопок. Свёрнут — схлопывается вправо под пилюлю «Чат»
