@@ -135,7 +135,7 @@ export async function POST(req: Request) {
         sender: "BOT",
         type: "SYSTEM",
         text:
-          "В случае вашего отсутствия тут, где удобнее чтобы мы с вами связались… ?",
+          "В случае если вас нет в сети, где удобнее чтобы мы с вами связались… ?",
         meta: { kind: "absence", tgLinkToken: conv.tgLinkToken },
       },
       include: { author: staffAuthorSelect },

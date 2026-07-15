@@ -55,11 +55,8 @@ export function SplashScreen() {
           width={320}
           height={320}
           priority
-          className="h-[13.6rem] w-[13.6rem] rounded-2xl object-contain sm:h-[18.7rem] sm:w-[18.7rem]"
+          className="animate-splash-title h-[13.6rem] w-[13.6rem] rounded-2xl object-contain sm:h-[18.7rem] sm:w-[18.7rem]"
         />
-        <span className="animate-splash-title font-display text-[2.25rem] font-bold tracking-tight text-primary sm:text-[2.8125rem]">
-          Sochifornia Travel
-        </span>
       </div>
     </div>
   );

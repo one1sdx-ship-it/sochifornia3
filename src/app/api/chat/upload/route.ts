@@ -16,14 +16,28 @@ const IMAGE_TYPES: Record<string, string> = {
   "image/webp": ".webp",
   "image/gif": ".gif",
 };
-// Голосовые: MediaRecorder отдаёт webm/opus (Chrome/Android) или mp4/aac (iOS Safari).
+// Голосовые: MediaRecorder отдаёт webm/opus (Chrome/Android), mp4/aac (iOS Safari),
+// а часть Android-браузеров/WebView — aac/3gpp/x-m4a. Держим список широким.
 const AUDIO_TYPES: Record<string, string> = {
   "audio/webm": ".webm",
   "audio/ogg": ".ogg",
   "audio/mp4": ".m4a",
+  "audio/x-m4a": ".m4a",
+  "audio/aac": ".aac",
+  "audio/3gpp": ".3gp",
   "audio/mpeg": ".mp3",
   "audio/wav": ".wav",
+  "audio/x-wav": ".wav",
 };
+
+// Запасной разбор: если точного совпадения нет, но это явно аудио (или контейнер,
+// который MediaRecorder мог выдать под аудио) — не отклоняем, а берём разумное .webm.
+function audioExtFallback(mime: string): string | null {
+  if (mime.startsWith("audio/")) return ".webm";
+  if (mime === "video/webm") return ".webm"; // MediaRecorder иногда так помечает опус
+  if (mime === "video/mp4") return ".m4a";
+  return null;
+}
 const MAX_BYTES = 10 * 1024 * 1024; // 10 МБ
 
 export async function POST(req: Request) {
@@ -39,8 +53,9 @@ export async function POST(req: Request) {
   }
 
   // MediaRecorder может добавлять параметры ("audio/webm;codecs=opus") — отрезаем.
-  const mime = file.type.split(";")[0].trim();
-  const ext = IMAGE_TYPES[mime] ?? AUDIO_TYPES[mime];
+  const mime = file.type.split(";")[0].trim().toLowerCase();
+  const isImage = Boolean(IMAGE_TYPES[mime]);
+  const ext = IMAGE_TYPES[mime] ?? AUDIO_TYPES[mime] ?? audioExtFallback(mime);
   if (!ext) {
     return NextResponse.json({ error: "Можно только фото (jpg/png/webp/gif) и голосовые" }, { status: 400 });
   }
@@ -69,12 +84,12 @@ export async function POST(req: Request) {
       access: "public",
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });
-    return NextResponse.json({ url: blob.url, kind: IMAGE_TYPES[mime] ? "image" : "voice" });
+    return NextResponse.json({ url: blob.url, kind: isImage ? "image" : "voice" });
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
   const dir = path.join(process.cwd(), "public", "uploads", "chat");
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, name), buf);
-  return NextResponse.json({ url: `/uploads/chat/${name}`, kind: IMAGE_TYPES[mime] ? "image" : "voice" });
+  return NextResponse.json({ url: `/uploads/chat/${name}`, kind: isImage ? "image" : "voice" });
 }

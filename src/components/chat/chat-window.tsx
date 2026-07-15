@@ -54,6 +54,10 @@ export function ChatWindow({
   const [sendError, setSendError] = useState("");
   const [busy, setBusy] = useState(false);
   const [gapTop, setGapTop] = useState(0);
+  // Выбранные, но ещё не отправленные фото (Telegram-стиль: превью + подпись).
+  const [photos, setPhotos] = useState<{ file: File; url: string }[]>([]);
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -107,6 +111,9 @@ export function ChatWindow({
     if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }));
   }, [open, total]);
 
+  // Освобождаем object-URL превью при размонтировании (без утечек памяти).
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
+
   // Лента: локальные (приветствие/робот) + серверные, с разделителями дней.
   const feed = useMemo(() => {
     const all = [...localMsgs, ...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -153,20 +160,64 @@ export function ChatWindow({
     }
   }
 
-  async function attachPhoto(file: File) {
-    if (busy) return;
+  // Выбор фото: не отправляем сразу, а копим превью (как в Telegram — можно
+  // добавить несколько, убрать лишние, подписать и отправить одним действием).
+  function addPhotos(files: FileList) {
     if (!exists && !phoneOk) {
       setGateError(true);
       return;
     }
-    setBusy(true);
-    const url = await onUpload(file, file.name);
-    setBusy(false);
-    if (!url) {
-      setSendError("Не удалось загрузить фото");
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) return;
+    setSendError("");
+    setPhotos((prev) =>
+      [...prev, ...imgs.map((f) => ({ file: f, url: URL.createObjectURL(f) }))].slice(0, 10),
+    );
+  }
+
+  function removePhoto(idx: number) {
+    setPhotos((prev) => {
+      const p = prev[idx];
+      if (p) URL.revokeObjectURL(p.url);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }
+
+  // Отправка выбранных фото альбомом. Подпись (текст из поля) прикрепляем к
+  // последнему фото — как делает Telegram для альбома.
+  async function sendPhotos() {
+    if (busy || photos.length === 0) return;
+    if (!exists && !phoneOk) {
+      setGateError(true);
       return;
     }
-    await doSend({ type: "IMAGE", attachmentUrl: url });
+    const caption = input.trim();
+    const contact = { name: data.name.trim(), phone: toE164(country, national) };
+    setBusy(true);
+    setSendError("");
+    for (let i = 0; i < photos.length; i++) {
+      const url = await onUpload(photos[i].file, photos[i].file.name);
+      if (!url) {
+        setBusy(false);
+        setSendError("Не удалось загрузить фото");
+        return;
+      }
+      const isLast = i === photos.length - 1;
+      const res = await onSend(
+        { type: "IMAGE", attachmentUrl: url, text: isLast && caption ? caption : undefined },
+        contact,
+      );
+      if (!res.ok) {
+        setBusy(false);
+        setSendError(res.error ?? "Не отправилось — попробуйте ещё раз");
+        return;
+      }
+    }
+    photos.forEach((p) => URL.revokeObjectURL(p.url));
+    setPhotos([]);
+    setInput("");
+    fitTextarea("");
+    setBusy(false);
   }
 
   // ── Запись голосового: тап — начать, тап — отправить, корзина — отменить ──
@@ -239,7 +290,7 @@ export function ChatWindow({
       {/* Окно: мобильные — под шапкой во весь экран; десктоп — панель справа (~25%) */}
       <div
         className={cn(
-          "fixed z-[60] flex animate-fade-in flex-col overflow-hidden bg-bg shadow-float",
+          "fixed z-[60] flex animate-chat-slide-up flex-col overflow-hidden bg-bg shadow-float",
           "inset-x-0 bottom-0",
           "lg:inset-auto lg:bottom-6 lg:right-6 lg:h-[min(700px,85vh)] lg:w-[clamp(360px,26vw,440px)] lg:rounded-2xl lg:border lg:border-hairline",
         )}
@@ -367,6 +418,34 @@ export function ChatWindow({
         <div className="relative border-t border-hairline bg-surface/90 px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 backdrop-blur">
           {sendError && <p className="mb-1 text-center text-xs font-medium text-error">{sendError}</p>}
 
+          {/* Строка выбранных фото: миниатюры с крестиком + кнопка «добавить ещё» */}
+          {photos.length > 0 && !rec && (
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+              {photos.map((p, i) => (
+                <div key={p.url} className="relative h-16 w-16 shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" className="h-16 w-16 rounded-xl object-cover" />
+                  <button
+                    type="button"
+                    aria-label="Убрать фото"
+                    onClick={() => removePhoto(i)}
+                    className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white shadow active:scale-90"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                aria-label="Добавить ещё фото"
+                onClick={() => fileRef.current?.click()}
+                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-hairline text-muted active:scale-95"
+              >
+                <Camera className="h-6 w-6" />
+              </button>
+            </div>
+          )}
+
           {rec ? (
             // Режим записи голосового
             <div className="flex items-center gap-3 py-1.5">
@@ -387,10 +466,10 @@ export function ChatWindow({
                 ref={fileRef}
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
                 hidden
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void attachPhoto(f);
+                  if (e.target.files?.length) addPhotos(e.target.files);
                   e.target.value = "";
                 }}
               />
@@ -412,20 +491,27 @@ export function ChatWindow({
                   onTyping();
                 }}
                 onKeyDown={(e) => {
+                  // Enter отправляет только на десктопе (точный указатель). На телефоне
+                  // (сенсор) синяя кнопка-стрелка клавиатуры делает обычный перенос строки.
                   if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void sendText();
+                    const coarse =
+                      typeof window !== "undefined" &&
+                      window.matchMedia?.("(any-pointer: coarse)").matches;
+                    if (!coarse) {
+                      e.preventDefault();
+                      void (photos.length > 0 ? sendPhotos() : sendText());
+                    }
                   }
                 }}
-                placeholder="Напишите сообщение…"
-                className="max-h-28 min-h-[44px] flex-1 resize-none rounded-2xl border border-hairline bg-surface-2 px-4 py-2.5 text-[15.5px] leading-relaxed text-ink shadow-inner outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder={photos.length > 0 ? "Добавьте подпись…" : "Напишите сообщение…"}
+                className="max-h-28 min-h-[44px] flex-1 resize-none overscroll-contain rounded-2xl border border-hairline bg-surface-2 px-4 py-2.5 text-[15.5px] leading-relaxed text-ink shadow-inner outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
-              {input.trim() ? (
+              {input.trim() || photos.length > 0 ? (
                 <button
                   type="button"
                   aria-label="Отправить"
                   disabled={busy}
-                  onClick={() => void sendText()}
+                  onClick={() => void (photos.length > 0 ? sendPhotos() : sendText())}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-500 text-white shadow-card transition-transform active:scale-90"
                 >
                   {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}

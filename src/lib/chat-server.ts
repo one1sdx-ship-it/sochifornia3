@@ -70,20 +70,23 @@ export async function maybeSendPromo(conv: ChatConversation): Promise<ChatMessag
   if (Date.now() - firstClientMsg.createdAt.getTime() < PROMO_AFTER_MS) return null;
 
   const code = genPromoCode();
-  const [msg] = await prisma.$transaction([
-    prisma.chatMessage.create({
-      data: {
-        conversationId: conv.id,
-        sender: "BOT",
-        type: "PROMO",
-        text: code,
-      },
-    }),
-    prisma.chatConversation.update({
-      where: { id: conv.id },
-      data: { promoCode: code, promoSentAt: new Date() },
-    }),
-  ]);
+  // Атомарный «замок»: помечаем promoSentAt ТОЛЬКО если он ещё пуст. При гонке
+  // (параллельные опросы клиента и админа) выиграет ровно один запрос — остальные
+  // получат count=0 и промо не создадут. Так уведомление о скидке не спамит подряд.
+  const claim = await prisma.chatConversation.updateMany({
+    where: { id: conv.id, promoSentAt: null },
+    data: { promoCode: code, promoSentAt: new Date() },
+  });
+  if (claim.count === 0) return null; // замок уже взят другим запросом
+
+  const msg = await prisma.chatMessage.create({
+    data: {
+      conversationId: conv.id,
+      sender: "BOT",
+      type: "PROMO",
+      text: code,
+    },
+  });
   // Если клиент подключил Telegram и ушёл — промо тоже доставим туда.
   await deliverToClientIfAway(conv, msg);
   return msg;

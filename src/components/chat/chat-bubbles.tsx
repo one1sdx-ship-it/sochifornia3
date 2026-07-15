@@ -66,13 +66,14 @@ export function Bubble({
     <div className={cn("flex w-full", mine ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "chat-pop relative max-w-[82%] px-4 py-2.5 text-[15.5px] leading-relaxed shadow-sm",
+          // drop-shadow вместо shadow-sm: тень по силуэту вместе с хвостиком, а не по прямоугольнику.
+          "chat-pop relative max-w-[82%] px-4 py-2.5 text-[15.5px] leading-relaxed drop-shadow-sm",
           // «Капли» iMessage: скругление умеренное, «хвостик» — острый нижний угол со своей стороны.
           mine
             ? "chat-tail-right rounded-2xl rounded-br-[6px] bg-gradient-to-br from-orange-500 to-amber-500 text-white"
             : staffish
               ? "chat-tail-left rounded-2xl rounded-bl-[6px] bg-gradient-to-br from-sky-500 to-cyan-500 text-white"
-              : "chat-tail-left rounded-2xl rounded-bl-[6px] border border-hairline bg-surface-2 text-ink",
+              : "chat-tail-left chat-tail-bordered rounded-2xl rounded-bl-[6px] border border-hairline bg-surface-2 text-ink",
           msg.failed && "opacity-60",
         )}
       >
@@ -272,14 +273,33 @@ function AbsenceCard({
                 aria-label={label}
                 aria-pressed={on}
                 onClick={() => choose(ch)}
-                className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-900 active:scale-95"
+                // Пока ничего не выбрано — обычный размер; после выбора выбранная
+                // плавно растёт на 10%, остальные плавно уменьшаются на 10%.
+                className={cn(
+                  "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-900",
+                  "transition-transform duration-300 ease-out active:scale-95",
+                  picked !== null && (on ? "scale-110" : "scale-90"),
+                )}
               >
-                {/* Иконка (при выборе затемняется на 50%) */}
+                {/* Иконка (при выборе затемняется на 50%).
+                   Telegram и WhatsApp крупнее на 35% (26px → 35px). */}
                 <span
                   className={cn("transition-opacity", on && "opacity-50")}
-                  style={{ color }}
+                  style={{
+                    color,
+                    transform:
+                      key === "tg"
+                        ? "translate(-1px, 1px)"
+                        : key === "wa"
+                          ? "translate(-0.6px, 0.6px)"
+                          : undefined,
+                  }}
                 >
-                  <Icon className="h-[26px] w-[26px]" />
+                  <Icon
+                    className={cn(
+                      key === "tg" || key === "wa" ? "h-[35px] w-[35px]" : "h-[26px] w-[26px]",
+                    )}
+                  />
                 </span>
 
                 {/* Зелёная обводка: моргает, пока не выбрана; сплошная — когда выбрана */}
@@ -291,12 +311,17 @@ function AbsenceCard({
                   style={{ boxShadow: `0 0 0 3px ${PICK_GREEN}` }}
                 />
 
-                {/* Ярко-зелёная галочка по центру выбранной иконки (на 30% крупнее) */}
+                {/* Выбор: крупная жирная зелёная галка с тёмным контуром —
+                   заметна поверх иконки без белой подложки. */}
                 {on && (
                   <Check
-                    className="pointer-events-none absolute h-8 w-8"
-                    strokeWidth={3.5}
-                    style={{ color: PICK_GREEN }}
+                    className="pointer-events-none absolute h-9 w-9"
+                    strokeWidth={4}
+                    style={{
+                      color: PICK_GREEN,
+                      filter:
+                        "drop-shadow(0 0 1px rgba(0,0,0,0.95)) drop-shadow(0 0 1px rgba(0,0,0,0.95)) drop-shadow(0 1px 2px rgba(0,0,0,0.55))",
+                    }}
                   />
                 )}
               </button>
@@ -314,7 +339,7 @@ function AbsenceCard({
 export function TypingBubble({ name }: { name: string }) {
   return (
     <div className="flex w-full justify-start">
-      <div className="chat-pop chat-tail-left rounded-2xl rounded-bl-[6px] bg-gradient-to-br from-sky-500 to-cyan-500 px-4 py-3 shadow-sm">
+      <div className="chat-pop chat-tail-left rounded-2xl rounded-bl-[6px] bg-gradient-to-br from-sky-500 to-cyan-500 px-4 py-3 drop-shadow-sm">
         <span className="sr-only">{name} печатает…</span>
         <span className="flex items-center gap-1">
           <span className="chat-typing-dot" />

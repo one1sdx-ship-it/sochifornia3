@@ -493,7 +493,27 @@
   animation: chat-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* «Хвостик» пузыря (iMessage-стиль): маленький скошенный квадрат в нижнем углу. */
+/* Плавное выдвижение окна чата снизу вверх. */
+@keyframes chat-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-chat-slide-up {
+  animation: chat-slide-up 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* «Хвостик» пузыря (iMessage-стиль): треугольник, вплотную примыкающий к нижнему
+   углу пузыря — читается как ровное продолжение пузыря, без скоса и зазора.
+   ::after растянут на весь пузырь (+6px выноса вбок), чтобы background: inherit
+   отрисовал градиент в том же масштабе, что у пузыря, — иначе градиент
+   перерисовывается внутри квадратика 11×11px и хвостик выходит темнее угла.
+   Сам треугольник вырезается clip-path'ом. */
 .chat-tail-left,
 .chat-tail-right {
   position: relative;
@@ -502,19 +522,46 @@
 .chat-tail-right::after {
   content: "";
   position: absolute;
+  top: 0;
   bottom: 0;
-  width: 10px;
-  height: 10px;
   background: inherit;
-  clip-path: polygon(0 100%, 100% 100%, 50% 0);
+  pointer-events: none;
 }
 .chat-tail-left::after {
-  left: -5px;
-  transform: skewX(18deg);
+  /* Правый край треугольника заходит внутрь пузыря (нет зазора), остриё смотрит влево-вниз. */
+  left: -6px;
+  right: 0;
+  clip-path: polygon(11px calc(100% - 11px), 11px 100%, 0 100%);
 }
 .chat-tail-right::after {
-  right: -5px;
-  transform: skewX(-18deg);
+  left: 0;
+  right: -6px;
+  clip-path: polygon(
+    calc(100% - 11px) calc(100% - 11px),
+    100% 100%,
+    calc(100% - 11px) 100%
+  );
+}
+
+/* Пузырь с рамкой (бот): ::after не наследует border, поэтому обводка
+   рвалась на хвостике. ::before рисует треугольник цвета hairline чуть
+   больше фонового — он читается как продолжение рамки. Фоновый треугольник
+   приподнят на 1px (низ — продолжение нижней рамки пузыря) и вытянут кверху,
+   чтобы обводка плавно сходила на нет у края пузыря и не рисовала линий внутри. */
+.chat-tail-bordered.chat-tail-left::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8.4px;
+  right: 0;
+  background: rgb(var(--hairline));
+  clip-path: polygon(13.4px calc(100% - 13.4px), 13.4px 100%, 0 100%);
+  pointer-events: none;
+}
+.chat-tail-bordered.chat-tail-left::after {
+  bottom: 1px;
+  clip-path: polygon(11px calc(100% - 13px), 11px 100%, 0 100%);
 }
 
 /* Три прыгающие точки «печатает…». */
@@ -590,6 +637,7 @@
   .chat-pop,
   .chat-typing-dot,
   .animate-chat-attn,
+  .animate-chat-slide-up,
   .absence-blink {
     animation: none;
     opacity: 1; /* без анимации оставляем обводку видимой */
