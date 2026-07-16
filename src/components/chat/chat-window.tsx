@@ -23,12 +23,20 @@ const QUICK_QUESTIONS = [
   "Как одеться и что взять с собой?",
 ];
 
+// Ключ черновика сообщения в localStorage: текст поля ввода сохраняется между сессиями, чтобы не
+// потерялся при закрытии сайта/приложения (в т.ч. когда номер ещё не введён).
+const DRAFT_KEY = "chat:draft";
+
+// Каждое слово — с заглавной буквы (для поля имени): «иван петров» → «Иван Петров».
+// Трогаем только первую букву после начала строки, пробела или дефиса; остальные символы не меняем.
+const capWords = (s: string) => s.replace(/(^|[\s-])(\S)/g, (_, p: string, c: string) => p + c.toUpperCase());
+
 type SendPayload = { type: "TEXT" | "IMAGE" | "VOICE"; text?: string; attachmentUrl?: string };
 
 export function ChatWindow({
   open, onClose, messages, localMsgs, staffTyping, staff, online, exists,
   tgLink, tgLinked, readUpTo, tourCtx,
-  onSend, onTyping, onUpload, canAskPush, onEnablePush,
+  onSend, onTyping, onUpload, canAskPush, onEnablePush, onPickContact,
 }: {
   open: boolean;
   onClose: () => void;
@@ -47,8 +55,28 @@ export function ChatWindow({
   onUpload: (file: Blob, filename: string) => Promise<string | null>;
   canAskPush: boolean;
   onEnablePush: () => void;
+  // Клиент выбрал канал обратной связи (телефон/tg/wa/max) — сохраняем, чтобы видел админ (задача 5).
+  onPickContact: (channel: string) => void;
 }) {
   const data = useLeadData();
+  // Плавное закрытие: когда open становится false, окно не исчезает мгновенно, а доигрывает
+  // анимацию ухода вниз (зеркально открытию снизу вверх), и лишь затем размонтируется.
+  const [render, setRender] = useState(open);
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      setClosing(false);
+    } else if (render) {
+      // Окно было открыто → проигрываем уход вниз, затем размонтируем.
+      setClosing(true);
+      const t = setTimeout(() => {
+        setRender(false);
+        setClosing(false);
+      }, 340); // == длительность chat-slide-down
+      return () => clearTimeout(t);
+    }
+  }, [open, render]);
   const [input, setInput] = useState("");
   const [gateError, setGateError] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -103,16 +131,75 @@ export function ChatWindow({
     };
   }, [open]);
 
-  // Автопрокрутка вниз при новых сообщениях/наборе.
   const total = messages.length + localMsgs.length + (staffTyping ? 1 : 0);
+
+  // «Держаться низа»: пока пользователь не пролистнул историю вверх, лента возвращается к
+  // последнему сообщению. Флаг обновляем по скроллу самого списка.
+  const stickRef = useRef(true);
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  // Жёсткая прокрутка вниз при КАЖДОМ открытии окна (в т.ч. после перезагрузки F5+Ctrl и после
+  // «закрыл → открыл»). История и картинки могут дозагрузиться уже после появления окна, а плавная
+  // прокрутка при этом «не доезжает» — поэтому прыгаем мгновенно (scrollTop) несколько раз: сразу,
+  // на ближайших кадрах и с задержками, пока лента не устаканится.
   useEffect(() => {
     if (!open) return;
+    stickRef.current = true;
+    const el = listRef.current;
+    if (!el) return;
+    const toBottom = () => {
+      const node = listRef.current;
+      if (node) node.scrollTop = node.scrollHeight;
+    };
+    toBottom();
+    const rafs = [
+      requestAnimationFrame(toBottom),
+      requestAnimationFrame(() => requestAnimationFrame(toBottom)),
+    ];
+    const timers = [60, 160, 320, 600, 1000].map((ms) => setTimeout(toBottom, ms));
+    return () => {
+      rafs.forEach(cancelAnimationFrame);
+      timers.forEach(clearTimeout);
+    };
+  }, [open]);
+
+  // Новые сообщения/«печатает…» при открытом окне: подматываем вниз, только если пользователь
+  // уже у низа ленты (не мешаем читать историю, если он пролистнул вверх).
+  useEffect(() => {
+    if (!open || !stickRef.current) return;
     const el = listRef.current;
     if (el) requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }));
   }, [open, total]);
 
   // Освобождаем object-URL превью при размонтировании (без утечек памяти).
   useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
+
+  // Черновик сообщения переживает закрытие сайта: читаем при монтировании, пишем при каждом
+  // изменении, очищаем — только после успешной отправки (setInput("")). Поэтому текст не теряется,
+  // если номер ещё не введён.
+  useEffect(() => {
+    try {
+      const d = localStorage.getItem(DRAFT_KEY);
+      if (d) {
+        setInput(d);
+        requestAnimationFrame(() => fitTextarea(d));
+      }
+    } catch {
+      /* localStorage недоступен */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_KEY, input);
+    } catch {
+      /* localStorage недоступен */
+    }
+  }, [input]);
 
   // Лента: локальные (приветствие/робот) + серверные, с разделителями дней.
   const feed = useMemo(() => {
@@ -146,6 +233,12 @@ export function ChatWindow({
   async function sendText(text?: string) {
     const t = (text ?? input).trim();
     if (!t || busy) return;
+    // Номер ещё не введён — НЕ стираем поле (иначе сообщение терялось): показываем гейт и выходим,
+    // черновик остаётся в поле и в localStorage.
+    if (!exists && !phoneOk) {
+      setGateError(true);
+      return;
+    }
     setInput("");
     fitTextarea("");
     await doSend({ type: "TEXT", text: t });
@@ -277,20 +370,32 @@ export function ChatWindow({
     ta.style.height = Math.min(ta.scrollHeight, 112) + "px";
   }
 
-  if (!open) return null;
+  if (!render) return null;
 
   const headerName = staff?.name ?? "Sochifornia Travel";
   const greetingSub = online ? "обычно отвечаем за пару минут" : "офлайн · честно ответим утром";
 
+  // Номер введён, диалог ещё не начат, поле пустое → показываем анимированную подсказку-плейсхолдер
+  // «Напишите сообщение…» отдельным overlay-элементом (перелив цвета + умеренная вибрация, задача 1).
+  const phVibrate = !exists && phoneOk && !input && photos.length === 0;
+
   return (
     <>
       {/* Затемнение (десктоп) — клик мимо окна закрывает */}
-      <div className="fixed inset-0 z-[59] hidden animate-fade-in bg-black/30 lg:block" onClick={onClose} />
+      <div
+        className={cn(
+          "fixed inset-0 z-[59] hidden bg-black/30 lg:block",
+          closing ? "animate-chat-fade-out" : "animate-fade-in",
+        )}
+        onClick={onClose}
+      />
 
       {/* Окно: мобильные — под шапкой во весь экран; десктоп — панель справа (~25%) */}
       <div
         className={cn(
-          "fixed z-[60] flex animate-chat-slide-up flex-col overflow-hidden bg-bg shadow-float",
+          "fixed z-[60] flex flex-col overflow-hidden bg-bg shadow-float",
+          // Открытие — снизу вверх; закрытие — зеркально вниз (задвигается за нижний край).
+          closing ? "animate-chat-slide-down" : "animate-chat-slide-up",
           "inset-x-0 bottom-0",
           "lg:inset-auto lg:bottom-6 lg:right-6 lg:h-[min(700px,85vh)] lg:w-[clamp(360px,26vw,440px)] lg:rounded-2xl lg:border lg:border-hairline",
         )}
@@ -354,7 +459,7 @@ export function ChatWindow({
         )}
 
         {/* ── Лента сообщений ── */}
-        <div ref={listRef} className="relative flex-1 space-y-2.5 overflow-y-auto px-4 py-4" data-lenis-prevent>
+        <div ref={listRef} onScroll={onListScroll} className="relative flex-1 space-y-2.5 overflow-y-auto px-4 py-4" data-lenis-prevent>
           {feed.map((item) =>
             item.kind === "day" ? (
               <DayDivider key={item.key} label={item.label} />
@@ -364,6 +469,7 @@ export function ChatWindow({
                 msg={item.msg}
                 readUpTo={readUpTo}
                 tgLinked={tgLinked}
+                onPickContact={onPickContact}
               />
             ),
           )}
@@ -393,11 +499,13 @@ export function ChatWindow({
               <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
               <input
                 value={data.name}
-                onChange={(e) => setLeadField("name", e.target.value)}
+                // Каждое слово имени — с заглавной буквы.
+                onChange={(e) => setLeadField("name", capWords(e.target.value))}
                 placeholder="Ваше имя"
                 className="h-11 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-24 text-[15px] text-ink shadow-inner outline-none placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
               />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-success">
+              {/* «НЕ обязательно» — на 20% крупнее базового text-xs (0.75rem × 1.2 = 0.9rem), задача 6 */}
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.9rem] font-medium text-success">
                 НЕ обязательно
               </span>
             </div>
@@ -407,9 +515,12 @@ export function ChatWindow({
               valid={phoneOk}
               onCountryChange={setCountry}
               onNationalChange={setNational}
+              // Список стран раскрывается вверх — поле у нижнего края окна чата (задача 7).
+              dropUp
             />
-            <span className={cn("mt-1 block text-right text-xs font-medium", phoneOk ? "text-success" : gateError ? "text-error" : "text-muted")}>
-              {phoneOk ? "✓ Номера достаточно — пишите!" : "Номер телефона — обязательно"}
+            {/* Подпись под телефоном: +20% (0.9rem) и по центру; новый текст успеха (задача 6) */}
+            <span className={cn("mt-1 block text-center text-[0.9rem] font-medium", phoneOk ? "text-success" : gateError ? "text-error" : "text-muted")}>
+              {phoneOk ? "✓ Номера достаточно — пишите сообщение!" : "Номер телефона — обязательно"}
             </span>
           </div>
         )}
@@ -481,31 +592,44 @@ export function ChatWindow({
               >
                 <Camera className="h-[22px] w-[22px]" />
               </button>
-              <textarea
-                ref={taRef}
-                rows={1}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  fitTextarea(e.target.value);
-                  onTyping();
-                }}
-                onKeyDown={(e) => {
-                  // Enter отправляет только на десктопе (точный указатель). На телефоне
-                  // (сенсор) синяя кнопка-стрелка клавиатуры делает обычный перенос строки.
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    const coarse =
-                      typeof window !== "undefined" &&
-                      window.matchMedia?.("(any-pointer: coarse)").matches;
-                    if (!coarse) {
-                      e.preventDefault();
-                      void (photos.length > 0 ? sendPhotos() : sendText());
+              <div className="relative flex-1">
+                <textarea
+                  ref={taRef}
+                  rows={1}
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    fitTextarea(e.target.value);
+                    onTyping();
+                  }}
+                  onKeyDown={(e) => {
+                    // Enter отправляет только на десктопе (точный указатель). На телефоне
+                    // (сенсор) синяя кнопка-стрелка клавиатуры делает обычный перенос строки.
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      const coarse =
+                        typeof window !== "undefined" &&
+                        window.matchMedia?.("(any-pointer: coarse)").matches;
+                      if (!coarse) {
+                        e.preventDefault();
+                        void (photos.length > 0 ? sendPhotos() : sendText());
+                      }
                     }
-                  }
-                }}
-                placeholder={photos.length > 0 ? "Добавьте подпись…" : "Напишите сообщение…"}
-                className="max-h-28 min-h-[44px] flex-1 resize-none overscroll-contain rounded-2xl border border-hairline bg-surface-2 px-4 py-2.5 text-[15.5px] leading-relaxed text-ink shadow-inner outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
-              />
+                  }}
+                  // В режиме вибро-подсказки нативный плейсхолдер прячем — его рисует overlay ниже.
+                  placeholder={phVibrate ? "" : photos.length > 0 ? "Добавьте подпись…" : "Напишите сообщение…"}
+                  className="max-h-28 min-h-[44px] w-full resize-none overscroll-contain rounded-2xl border border-hairline bg-surface-2 px-4 py-2.5 text-[15.5px] leading-relaxed text-ink shadow-inner outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                {/* Overlay-плейсхолдер: перелив цвета (muted↔зелёный) + сильная вибрация надписи (задача 1).
+                    Настоящий ::placeholder нельзя двигать transform-ом, поэтому рисуем отдельным span. */}
+                {phVibrate && (
+                  <span
+                    aria-hidden
+                    className="animate-chat-ph-label pointer-events-none absolute left-4 top-2.5 origin-left whitespace-nowrap text-[15.5px] leading-relaxed"
+                  >
+                    Напишите сообщение…
+                  </span>
+                )}
+              </div>
               {input.trim() || photos.length > 0 ? (
                 <button
                   type="button"

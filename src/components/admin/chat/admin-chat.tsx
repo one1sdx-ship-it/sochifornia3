@@ -38,6 +38,15 @@ type ClientInfo = {
   promoCode: string;
   currentTour: { slug: string; title: string } | null;
   viewedTours: { slug: string; title: string }[];
+  preferredContact: string; // выбранный клиентом канал офлайн-связи: phone/tg/wa/max (или "")
+};
+
+// Человекочитаемые подписи каналов обратной связи (совпадают с иконками в чате клиента).
+const CONTACT_LABELS: Record<string, string> = {
+  phone: "📞 По телефону",
+  tg: "✈️ Telegram",
+  wa: "🟢 WhatsApp",
+  max: "🟣 Max",
 };
 
 type AdminTour = {
@@ -265,6 +274,15 @@ export function AdminChat() {
                 {client?.promoCode && <p>🎁 Промокод: <b className="text-ink">{client.promoCode}</b></p>}
               </div>
             </div>
+
+            {/* Доп. панель: выбранный клиентом канал связи, если его нет в сети (задача 5).
+                Показываем только когда клиент сделал выбор в сообщении «где удобнее связаться…?». */}
+            {client?.preferredContact && CONTACT_LABELS[client.preferredContact] && (
+              <div className="flex items-center gap-2 border-b border-hairline bg-primary/5 px-4 py-2 text-sm">
+                <span className="text-muted">Связаться, если офлайн:</span>
+                <b className="text-ink">{CONTACT_LABELS[client.preferredContact]}</b>
+              </div>
+            )}
 
             {/* Сообщения */}
             <div ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4">

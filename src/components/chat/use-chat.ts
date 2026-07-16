@@ -184,6 +184,16 @@ export function useChat(open: boolean, tourCtx: TourCtx) {
     }).catch(() => {});
   }, []);
 
+  // Клиент выбрал канал обратной связи (задача 5) — сохраняем на сервере (увидит админ).
+  const pickContact = useCallback((channel: string) => {
+    if (!hasConversation()) return;
+    fetch("/api/chat/contact-pref", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId: getClientId(), channel }),
+    }).catch(() => {});
+  }, []);
+
   // Загрузка вложения (фото/голос). Возвращает URL или null.
   const upload = useCallback(async (file: Blob, filename: string): Promise<string | null> => {
     const fd = new FormData();
@@ -201,6 +211,6 @@ export function useChat(open: boolean, tourCtx: TourCtx) {
 
   return {
     messages, staffTyping, staff, unread, online, tgLinked, tgLink, exists, readUpTo,
-    send, sendTyping, upload, sync, onIncoming,
+    send, sendTyping, upload, sync, onIncoming, pickContact,
   };
 }

@@ -4,6 +4,7 @@ import "@/styles/globals.css";
 import { site } from "@/data/site";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SmoothScroll } from "@/components/smooth-scroll";
+import { TapRescue } from "@/components/tap-rescue";
 import { SplashScreen } from "@/components/splash-screen";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
@@ -63,6 +64,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
         <ThemeProvider>
           <SmoothScroll />
+          {/* Глобальная страховка тапа: во время инерции прокрутки браузер «съедает» click —
+              здесь он восстанавливается, чтобы любая кнопка срабатывала с первого раза. */}
+          <TapRescue />
           <SplashScreen />
           <Header />
           <main>{children}</main>

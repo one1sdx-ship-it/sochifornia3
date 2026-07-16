@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import type { Tour, TourCategory } from "@/data/types";
 import { categories } from "@/data/types";
 import { TourCard } from "@/components/tour-card";
-import { OPEN_FILTERS_EVENT } from "@/components/filter-tab";
+import { OPEN_FILTERS_EVENT, FILTERS_PANEL_TOGGLE_EVENT } from "@/components/filter-tab";
 import { cn, formatPrice } from "@/lib/utils";
 
 type SortKey = "popular" | "price-asc" | "price-desc";
@@ -63,6 +63,17 @@ export function CatalogFilters({
       setClosing(false);
     }, 300);
   };
+
+  // Сообщаем шапке о состоянии панели: пока панель открыта, шапка прячет свои элементы
+  // (её z-index выше панели, и лого/кнопки иначе торчат поверх «Фильтров»). При начале
+  // закрытия (closing) шапка возвращается сразу — синхронно с анимацией «панель уезжает влево».
+  const notifyHeader = (opened: boolean) =>
+    window.dispatchEvent(new CustomEvent<boolean>(FILTERS_PANEL_TOGGLE_EVENT, { detail: opened }));
+  useEffect(() => {
+    notifyHeader(open && !closing);
+  }, [open, closing]);
+  // Уход со страницы с открытой панелью — возвращаем шапку
+  useEffect(() => () => { notifyHeader(false); }, []);
 
   // Блокируем прокрутку фона, пока открыта панель (как в меню сайта)
   useEffect(() => {
@@ -211,9 +222,11 @@ export function CatalogFilters({
       </div>
 
       {/* Мобильная панель фильтров — выезжает слева направо (как меню сайта, зеркально).
-          Открывается единой плавающей кнопкой «Фильтры» (filter-tab.tsx) через событие/сигнал. */}
+          Открывается единой плавающей кнопкой «Фильтры» (filter-tab.tsx) через событие/сигнал.
+          z-[65] — выше шапки (z-[61]): выезжая, панель физически заслоняет лого и кнопки,
+          а шапка параллельно плавно гаснет (см. header.tsx). Ниже мобильного меню (z-[70]). */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-[65] lg:hidden">
           <div
             className={cn(
               "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",

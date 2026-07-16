@@ -24,12 +24,17 @@ export function SplashScreen() {
     return () => clearTimeout(t);
   }, []);
 
-  // Пока заставка на экране — прокрутка страницы отключена (в т.ч. Lenis)
+  // Пока заставка полностью видима — прокрутка страницы отключена (в т.ч. Lenis).
+  // Замок снимаем в момент СТАРТА исчезновения (hiding), а не после 500мс фейда: мобильный
+  // браузер классифицирует жест в момент касания, и свайп, начатый при ещё заблокированной
+  // прокрутке (например, сразу после тапа-скипа по заставке), оставался «мёртвым» до
+  // отпускания пальца — прокрутка «не работала». Во время фейда заставка уже прозрачнеет и
+  // pointer-events-none, так что ранняя разблокировка ничего не ломает.
   useEffect(() => {
-    if (!visible) return;
+    if (hiding) return;
     stopScroll();
     return () => startScroll();
-  }, [visible]);
+  }, [hiding]);
 
   useEffect(() => {
     if (!hiding) return;
@@ -55,7 +60,7 @@ export function SplashScreen() {
           width={320}
           height={320}
           priority
-          className="animate-splash-title h-[13.6rem] w-[13.6rem] rounded-2xl object-contain sm:h-[18.7rem] sm:w-[18.7rem]"
+          className="animate-splash-title h-[22.1rem] w-[22.1rem] rounded-2xl object-contain sm:h-[30.3875rem] sm:w-[30.3875rem]"
         />
       </div>
     </div>

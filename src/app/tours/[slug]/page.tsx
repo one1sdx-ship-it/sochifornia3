@@ -10,15 +10,16 @@ import { getCurrentUser, canEditTour } from "@/lib/session";
 import { TourEditLauncher, type EditorTour } from "@/components/admin/tour-editor/tour-edit-launcher";
 import { InlineEditProvider } from "@/components/admin/tour-editor/inline-edit";
 import {
-  EditableMetaText, EditablePrice, TourBlocksGrid, TourBringList, TourChecklistCard, TourProgram,
+  EditableMetaText, TourBlocksGrid, TourBringList, TourChecklistCard, TourProgram,
 } from "@/components/admin/tour-editor/editable-sections";
+import { formatPrice } from "@/lib/utils";
 import { reviews, faqs, guides } from "@/data/content";
 import { categories } from "@/data/types";
 import { site } from "@/data/site";
 import { TourGallery } from "@/components/tour-gallery";
 import { TourHeroCarousel } from "@/components/tour-hero-carousel";
 import { LeadForm } from "@/components/lead-form";
-import { ReviewCard } from "@/components/review-card";
+import { TourReviews } from "@/components/tour-reviews";
 import { FaqAccordion } from "@/components/faq-accordion";
 import { TourCard } from "@/components/tour-card";
 import { GuideCard } from "@/components/guide-card";
@@ -114,6 +115,12 @@ export default async function TourPage({
     },
   };
 
+  // Временно скрытые секции страницы тура по просьбе клиента (задача 1). Разметка сохранена —
+  // чтобы вернуть любую секцию, поставьте соответствующий флаг в true.
+  const SHOW_MEETING = false; // «Место встречи»
+  const SHOW_GALLERY = false; // «Фотографии»
+  const SHOW_GUIDE = false; // «Ваш гид»
+
   return (
     // Провайдер быстрой inline-правки: без прав отдаёт «пустой» контекст,
     // и все Editable-компоненты рендерят обычный статичный текст.
@@ -178,10 +185,12 @@ export default async function TourPage({
           </Reveal>
 
           {/* Место встречи (бывший «Маршрут»): точка сбора на карте, задаётся в админке */}
-          <Reveal as="section">
-            <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Место встречи</h2>
-            <MeetingPoint address={entity.meetingAddress} lat={entity.meetingLat} lng={entity.meetingLng} />
-          </Reveal>
+          {SHOW_MEETING && (
+            <Reveal as="section">
+              <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Место встречи</h2>
+              <MeetingPoint address={entity.meetingAddress} lat={entity.meetingLat} lng={entity.meetingLng} />
+            </Reveal>
+          )}
 
           {/* Что входит / не входит */}
           <Reveal as="section" className="grid gap-6 sm:grid-cols-2">
@@ -198,43 +207,49 @@ export default async function TourPage({
           </Reveal>
 
           {/* Галерея */}
-          <Reveal as="section">
-            <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Фотографии</h2>
-            <div className="mt-6">
-              <TourGallery images={tour.gallery} title={tour.title} />
-            </div>
-          </Reveal>
+          {SHOW_GALLERY && (
+            <Reveal as="section">
+              <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Фотографии</h2>
+              <div className="mt-6">
+                <TourGallery images={tour.gallery} title={tour.title} />
+              </div>
+            </Reveal>
+          )}
 
           {/* Гид */}
-          <Reveal as="section">
-            <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Ваш гид</h2>
-            <div className="mt-6 max-w-sm">
-              <GuideCard guide={guide} />
-            </div>
-          </Reveal>
-
-          {/* FAQ */}
-          <Reveal as="section">
-            <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Частые вопросы</h2>
-            <div className="mt-6">
-              <FaqAccordion items={faqs.slice(0, 4)} />
-            </div>
-          </Reveal>
+          {SHOW_GUIDE && (
+            <Reveal as="section">
+              <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Ваш гид</h2>
+              <div className="mt-6 max-w-sm">
+                <GuideCard guide={guide} />
+              </div>
+            </Reveal>
+          )}
         </div>
 
         {/* Липкая колонка: цена + форма */}
         <aside className="lg:relative">
           <div id="tour-lead" className="lg:sticky lg:top-24">
-            <div className="mb-4 rounded-lg border border-hairline bg-surface p-6">
-              <div className="flex items-end justify-between">
-                <div>
-                  <span className="text-sm text-muted">Стоимость от</span>
-                  <EditablePrice value={tour.price} className="font-display text-3xl font-bold text-ink" />
-                  <span className="text-sm text-muted">за человека</span>
-                </div>
+            {/* Стоимость: два тарифа, прислонённых друг к другу в одной карточке —
+                «взрослый» сверху и «детский» снизу, разделённые тонкой пунктирной линией.
+                Значения — как в нижней панели [[sticky-booking-bar]]: взрослый = base + 300, детский = base (задача 5). */}
+            <div className="mb-4 overflow-hidden rounded-lg border border-hairline bg-surface">
+              {/* Взрослый билет */}
+              <div className="flex items-end justify-between p-6">
+                <p className="font-display text-3xl font-bold text-ink">
+                  от {formatPrice(tour.price + 300)}<span className="text-base font-normal text-muted">/взрослый</span>
+                </p>
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary">
                   <Star className="h-4 w-4 fill-primary" /> {tour.rating}
                 </span>
+              </div>
+              {/* Минималистичный «шов» между тарифами */}
+              <div className="border-t border-dashed border-hairline" />
+              {/* Детский билет */}
+              <div className="p-6">
+                <p className="font-display text-3xl font-bold text-ink">
+                  от {formatPrice(tour.price)}<span className="text-base font-normal text-muted">/детский</span>
+                </p>
               </div>
             </div>
             {/* id на самой форме (а не на #tour-lead с карточкой цены выше) — чтобы полноэкранная
@@ -244,29 +259,34 @@ export default async function TourPage({
             </div>
           </div>
         </aside>
+
+        {/* FAQ — третий элемент сетки: на desktop встаёт в левую колонку под основным
+            контентом (col1, row2), а на мобиле (одна колонка) идёт ПОСЛЕ блока цены и формы
+            заявки — задача 7: порядок цена → заявка → FAQ → отзывы. */}
+        <Reveal as="section" className="min-w-0 lg:col-start-1">
+          <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Частые вопросы</h2>
+          <div className="mt-6">
+            <FaqAccordion items={faqs.slice(0, 4)} />
+          </div>
+        </Reveal>
       </section>
 
-      {/* Отзывы */}
-      <section className="bg-surface py-section-sm">
-        <div className="container-wide">
-          <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Отзывы туристов</h2>
-          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {reviews.slice(0, 3).map((r) => (
-              <ReviewCard key={r.name} review={r} />
+      {/* Отзывы + Похожие в общей обёртке: sticky-переключатель отзывов остаётся видимым,
+          пока листаем и карточки отзывов, и блок «Похожие» — не пропадает вместе с карточками (задача 2). */}
+      <div className="relative">
+        {/* Отзывы: заголовок по центру + переключатель «Отзывы о текущей экскурсии / Все отзывы» */}
+        <TourReviews reviews={reviews.slice(0, 3)} />
+
+        {/* Похожие экскурсии */}
+        <section className="container-wide py-section-sm">
+          <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Рекомендуем также</h2>
+          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {relatedFallback.map((t) => (
+              <TourCard key={t.slug} tour={t} />
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Похожие экскурсии */}
-      <section className="container-wide py-section-sm">
-        <h2 className="font-display text-2xl font-bold text-ink sm:text-3xl">Рекомендуем также</h2>
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {relatedFallback.map((t) => (
-            <TourCard key={t.slug} tour={t} />
-          ))}
-        </div>
-      </section>
+        </section>
+      </div>
 
       <StickyBookingBar price={tour.price} />
       <LeadOverlay tourTitle={tour.title} />

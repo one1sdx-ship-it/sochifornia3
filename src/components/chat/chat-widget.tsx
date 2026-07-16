@@ -163,6 +163,7 @@ export function ChatWidget() {
       onUpload={chat.upload}
       canAskPush={canAskPush}
       onEnablePush={() => void enablePush()}
+      onPickContact={chat.pickContact}
     />
   );
 }

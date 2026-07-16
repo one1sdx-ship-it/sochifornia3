@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, Loader2, Pencil, User, X } from "lucide-react";
+import { Check, ChevronLeft, CornerDownLeft, Loader2, Pencil, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeadData, setLeadField } from "@/components/lead-store";
 import { stopScroll, startScroll } from "@/components/smooth-scroll";
@@ -77,6 +77,10 @@ type Step = "presets" | "parts" | "wheels";
 type Anim = "" | "out" | "in-right" | "in-left";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+// Каждое слово — с заглавной буквы (для поля имени): «иван петров» → «Иван Петров».
+// Трогаем только первую букву после начала строки, пробела или дефиса; остальные символы не меняем.
+const capWords = (s: string) => s.replace(/(^|[\s-])(\S)/g, (_, p: string, c: string) => p + c.toUpperCase());
 
 // Форматирование, валидация и разбор телефона вынесены в [[phone-input]] (на базе
 // libphonenumber-js): здесь используем helpers toE164 / fromE164 / isPhoneValid.
@@ -660,12 +664,34 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                           <input
                             ref={nameRef}
                             value={data.name}
-                            onChange={(e) => setLeadField("name", e.target.value)}
+                            // Каждое слово имени — с заглавной буквы.
+                            onChange={(e) => setLeadField("name", capWords(e.target.value))}
                             onFocus={onNameFocus}
                             onBlur={onNameBlur}
+                            // Enter в поле имени — перейти дальше (снять фокус → форма раскрывается).
+                            onKeyDown={(e) => e.key === "Enter" && nameRef.current?.blur()}
                             placeholder="Ваше имя"
-                            className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-4 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
+                            className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-32 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
                           />
+                          {/* Как только введено имя — справа в поле плавно появляется мигающая
+                              клавиша «ENTER» (задача 8). Клик — снять фокус и раскрыть форму. */}
+                          {data.name.trim() && (
+                            <button
+                              type="button"
+                              onClick={() => nameRef.current?.blur()}
+                              aria-label="Продолжить"
+                              // Вид «клавиши»: слабо скруглённые углы (rounded-[5px]), выраженный
+                              // контур (border-2) и приподнятая нижняя грань-«ступенька» (shadow),
+                              // при нажатии клавиша «проседает». Центрируем по вертикали через
+                              // inset-y-0 + my-auto, а НЕ через translate — анимация cb-enter
+                              // (пульс) задаёт свой transform и перебила бы центрирование.
+                              // right-[15px]: смещена левее на 7px (было right-2 = 8px).
+                              className="animate-cb-enter absolute inset-y-0 right-[15px] my-auto flex h-8 items-center gap-1 rounded-[5px] border-2 border-primary/70 bg-primary/15 px-2 text-primary shadow-[0_2px_0_rgb(var(--primary)/0.45)] active:translate-y-px active:shadow-none"
+                            >
+                              <CornerDownLeft className="h-4 w-4" strokeWidth={2.5} aria-hidden="true" />
+                              <span className="text-[10px] font-extrabold leading-none">Подтвердить</span>
+                            </button>
+                          )}
                         </div>
                         {/* Подпись под именем — «НЕ обязательно», зелёная. На 30% крупнее базового
                             text-xs (0.75rem × 1.3 = 0.975rem). Текст обёрнут в inline-block с
@@ -905,7 +931,9 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                       onClick={startEditName}
                       className="absolute left-0 inline-flex items-center gap-1 rounded-full border border-hairline bg-surface px-2.5 py-1 text-xs font-medium text-ink active:scale-95"
                     >
-                      <Pencil className="animate-pencil-wiggle h-3.5 w-3.5 text-primary" /> Изменить имя
+                      {/* Пока имя не введено — приглашаем представиться; как только введено — «Изменить имя». */}
+                      <Pencil className="animate-pencil-wiggle h-3.5 w-3.5 text-primary" />{" "}
+                      {data.name.trim() ? "Изменить имя" : "Как можем к вам обращаться?"}
                     </button>
                     {/* Имя по центру строки. При пустом имени запятую не показываем. */}
                     {data.name.trim() && (
@@ -919,7 +947,7 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                   </div>
                   {/* 2-я строка: «мы вам перезвоним: …» по центру. */}
                   <div className="text-center">
-                    мы <strong className="font-bold">вам</strong> перезвоним:{" "}
+                    Мы <strong className="font-bold">вам</strong> перезвоним:{" "}
                     <span className="font-semibold text-ink">{whenText()}</span>
                   </div>
                 </div>

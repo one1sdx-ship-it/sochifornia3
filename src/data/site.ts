@@ -13,10 +13,10 @@ export const site = {
   telegram: "https://t.me/sochiforniatravel",
   max: "https://max.ru/sochiforniatravel", // заглушка — заменить реальной ссылкой MAX
   workingHours: "Ежедневно с 9:00 до 21:00",
-  address: "г. Сочи, ул. Навагинская, 9 (заглушка)",
-  email: "info@sochifornia.ru",
+  address: "г. Сочи, бул. Морской, 1",
+  email: "fe1z@mail.ru",
   social: {
-    vk: "https://vk.com/sochifornia",
+    vk: "https://vk.com/sochiforniatravel",
     telegram: "https://t.me/sochiforniatravel",
     whatsapp: "https://wa.me/79862228228",
   },

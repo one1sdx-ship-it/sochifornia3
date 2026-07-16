@@ -24,6 +24,21 @@ export function smoothScrollToTop() {
   }
 }
 
+// Плавный переход к якорю (id элемента) — той же схемой, что smoothScrollToTop: командуем
+// ИМЕННО Lenis с force, потому что нативный прыжок по hash во время его инерции/анимации
+// перебивается кадровым scrollTo, и переход «не срабатывает». Учитываем scroll-margin-top
+// элемента (нативный якорный переход его уважает, Lenis сам — нет).
+export function smoothScrollToAnchor(id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (lenisInstance) {
+    const offset = -(parseFloat(getComputedStyle(el).scrollMarginTop) || 0);
+    lenisInstance.scrollTo(el, { force: true, offset });
+  } else {
+    el.scrollIntoView(); // reduced-motion / Lenis отключён — нативно
+  }
+}
+
 // Прокрутка к абсолютной позиции Y (синхронно с Lenis — владельцем скролла).
 // immediate=true — мгновенно (напр. под открывающейся панелью заявки прокрутки не видно).
 export function scrollToY(y: number, immediate = false) {

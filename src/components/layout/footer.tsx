@@ -25,7 +25,8 @@ export function Footer() {
         <div>
           <h4 className="text-sm font-semibold uppercase tracking-wide text-muted">Разделы</h4>
           <ul className="mt-4 space-y-2.5">
-            {nav.map((item) => (
+            {/* В футере скрываем «Гиды» и «Блог» (в остальной навигации они остаются). */}
+            {nav.filter((item) => item.href !== "/guides" && item.href !== "/blog").map((item) => (
               <li key={item.href}>
                 <Link href={item.href} className="text-sm text-body transition-colors hover:text-primary">
                   {item.label}
@@ -69,7 +70,8 @@ export function Footer() {
       </div>
 
       <div className="border-t border-hairline">
-        <div className="container-wide flex flex-col items-center justify-between gap-2 py-5 pb-[calc(6rem+env(safe-area-inset-bottom))] text-xs text-muted sm:flex-row lg:pb-5">
+        {/* id — по нему [[mobile-nav]] замеряет верх панели и «выталкивает» кнопку «Наверх» вверх */}
+        <div id="footer-legal" className="container-wide flex flex-col items-center justify-between gap-2 py-5 pb-[calc(8.8rem+env(safe-area-inset-bottom))] text-xs text-muted sm:flex-row lg:pb-5">
           <p>© {new Date().getFullYear()} Sochifornia Travel. Все права защищены.</p>
           <div className="flex gap-4">
             <Link href="/privacy" className="hover:text-primary">Политика конфиденциальности</Link>

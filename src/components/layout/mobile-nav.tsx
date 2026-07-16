@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ArrowUp, Compass, Images, Phone, PhoneCall, Star } from "lucide-react";
 import { site } from "@/data/site";
 import { cn } from "@/lib/utils";
-import { smoothScrollToTop } from "@/components/smooth-scroll";
+import { smoothScrollToAnchor, smoothScrollToTop } from "@/components/smooth-scroll";
 import { CallbackModal, CALLBACK_CLOSE_EVENT } from "@/components/callback-modal";
 import { ContactFab } from "@/components/contact-fab";
 
@@ -20,6 +20,7 @@ const items = [
 
 export function MobileNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [showTop, setShowTop] = useState(false);
   const [showPhone, setShowPhone] = useState(false);
   const [callbackOpen, setCallbackOpen] = useState(false); // открыта ли панель «Перезвоните мне»
@@ -29,6 +30,11 @@ export function MobileNav() {
   const btnRef = useRef<HTMLButtonElement>(null); // белая кнопка «Перезвоните мне»
   const [shift, setShift] = useState(0); // на сколько px сдвинуть кнопку вправо, когда подложка скрыта
   const [clusterBottom, setClusterBottom] = useState(80); // нижнее положение кластера: центр по кнопке «Перезвоните мне»
+  // Нижнее положение кнопки «Наверх»: обычно 147px, но когда панель с копирайтом (#footer-legal)
+  // доезжает до кнопки, та «выталкивается» вверх, оставляя зазор TOP_GAP между собой и панелью.
+  const TOP_BASE = 147;
+  const TOP_GAP = 12;
+  const [topBtnBottom, setTopBtnBottom] = useState(TOP_BASE);
   const [ready, setReady] = useState(false); // анимируем сдвиг только после первого замера (без «прыжка» на загрузке)
 
   const onCatalog = pathname === "/tours";
@@ -44,9 +50,22 @@ export function MobileNav() {
       if (y < lastY.current - 4) setShowPhone(true); // листают вверх → показать
       else if (y > lastY.current + 4) setShowPhone(false); // листают вниз → скрыть
       lastY.current = y;
+      // «Выталкивание» кнопки «Наверх» панелью с копирайтом: как только верх панели поднимается
+      // выше исходного низа кнопки (147px от низа экрана), кнопка едет вверх вместе с панелью,
+      // сохраняя зазор TOP_GAP. Панель ушла из виду — кнопка возвращается на 147px.
+      const legal = document.getElementById("footer-legal");
+      if (legal) {
+        const fromBottom = window.innerHeight - legal.getBoundingClientRect().top; // верх панели, px от низа экрана
+        setTopBtnBottom(Math.max(TOP_BASE, fromBottom + TOP_GAP));
+      }
     };
+    onScroll(); // первичный расчёт (страница могла открыться уже прокрученной)
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, []);
 
   // взаимодействие с каруселью фото → показать кнопку телефона
@@ -117,13 +136,69 @@ export function MobileNav() {
     };
   }, [showContext, phoneVisible]);
 
+  // Переход по пункту нижней навигации. «Галерея» — якорь на главной: уже на главной скроллим
+  // САМИ через Lenis (нативный прыжок по hash во время его инерции перебивается кадровым
+  // scrollTo и «не срабатывает», а повторный клик по тому же «/#gallery» Next вообще не
+  // прокручивает заново); с других страниц — обычный переход, Next сам прокрутит к якорю.
+  const go = (href: string) => {
+    setCallbackOpen(false);
+    if (href === "/#gallery" && pathname === "/") {
+      smoothScrollToAnchor("gallery");
+      return;
+    }
+    router.push(href);
+  };
+
+  // Тап должен срабатывать и во время инерции прокрутки, когда браузер «съедает» click, —
+  // та же болезнь, что у кнопок «Наверх» и «Фильтры» (см. их pointerdown-обход). Здесь
+  // реагируем на pointerup: палец опустили и подняли на пункте почти без смещения — это
+  // осознанный тап, переходим сами; заметный увод пальца или pointercancel — это жест
+  // прокрутки, ничего не делаем. Последующий click того же тапа гасим флагом; click без
+  // pointerup (клавиатура, скринридеры) работает как раньше.
+  const tapRef = useRef<{ href: string; y: number } | null>(null);
+  const tapFiredRef = useRef(false);
+  const onItemPointerDown = (href: string, y: number) => {
+    tapRef.current = { href, y };
+  };
+  const onItemPointerUp = (href: string, y: number) => {
+    const tap = tapRef.current;
+    tapRef.current = null;
+    if (!tap || tap.href !== href) return;
+    if (Math.abs(y - tap.y) > 12) return; // палец повело — это прокрутка, не тап
+    tapFiredRef.current = true;
+    // Страховка: если браузер click так и не пришлёт, флаг не должен погасить следующий
+    // клавиатурный Enter.
+    setTimeout(() => (tapFiredRef.current = false), 600);
+    go(href);
+  };
+  const onItemClick = (href: string, e: React.MouseEvent) => {
+    if (tapFiredRef.current) {
+      tapFiredRef.current = false;
+      e.preventDefault(); // переход уже выполнен по pointerup
+      return;
+    }
+    if (href === "/#gallery" && pathname === "/") {
+      e.preventDefault(); // клавиатура: якорь на главной тоже ведём через Lenis
+      go(href);
+      return;
+    }
+    // Открытая панель «Перезвоните мне» закрывается сразу при переходе по навигации.
+    setCallbackOpen(false);
+  };
+
   return (
     <>
       {/* Плавающие кнопки над нижней навигацией */}
       {/* Кнопка «Наверх»: как закладка «Фильтры» — торчит из-за левого края экрана (скругление только
           справа, без левой рамки). Приподнята (132 → 147) и увеличена на 20% (h-10 → h-12).
           В скрытом виде уезжает за левый край. */}
-      <div className="fixed bottom-[147px] left-0 z-40 lg:hidden">
+      {/* bottom задаётся инлайном: базовые 147px либо выше — когда панель с копирайтом
+          «выталкивает» кнопку. Переход по bottom с лёгкой задержкой: кнопка не дёргается
+          синхронно с прокруткой, а мягко «догоняет» панель — и вверх, и вниз. */}
+      <div
+        style={{ bottom: topBtnBottom }}
+        className="fixed left-0 z-40 transition-[bottom] delay-[40ms] duration-500 ease-out lg:hidden"
+      >
         <button
           type="button"
           aria-label="Наверх"
@@ -138,7 +213,7 @@ export function MobileNav() {
               : "pointer-events-none -translate-x-full opacity-0"
           )}
         >
-          <ArrowUp className="animate-arrow-hint h-6 w-6" />
+          <ArrowUp className="animate-arrow-hint relative top-0.5 h-6 w-6" />
         </button>
       </div>
 
@@ -250,8 +325,10 @@ export function MobileNav() {
                 <Link
                   key={href}
                   href={href}
-                  // Открытая панель «Перезвоните мне» закрывается сразу при переходе по навигации.
-                  onClick={() => setCallbackOpen(false)}
+                  onPointerDown={(e) => onItemPointerDown(href, e.clientY)}
+                  onPointerUp={(e) => onItemPointerUp(href, e.clientY)}
+                  onPointerCancel={() => (tapRef.current = null)}
+                  onClick={(e) => onItemClick(href, e)}
                   className={cn(
                     "flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors",
                     active ? "text-primary" : "text-muted"

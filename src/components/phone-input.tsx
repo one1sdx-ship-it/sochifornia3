@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FC, type SVGProps } from "react";
-import { ChevronDown, Search, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronDown, Search, Trash2, X } from "lucide-react";
 import {
   AsYouType,
   getCountries,
@@ -72,8 +73,14 @@ const countryName = (cc: string) => regionNames?.of(cc) ?? cc;
 // Страны наверху списка (частые для нашей аудитории) — остальные по алфавиту.
 const PRIORITY: CountryCode[] = ["RU", "KZ", "BY", "UA", "AM", "AZ", "GE", "KG", "UZ", "TJ"];
 
-// Максимум национальных цифр (самые длинные планы нумерации ~12–14). Больше — не даём ввести.
-const MAX_NATIONAL = 14;
+// Максимум национальных цифр ПО СТРАНЕ (задача 4): для основной аудитории задаём точные длины,
+// для остальных — общий предел по E.164 (всего ≤15 цифр вместе с кодом страны). Сверх этого
+// значения ввести/вставить нельзя — лишние цифры отсекаются в handleInput/paste.
+const NATIONAL_MAX: Partial<Record<CountryCode, number>> = {
+  RU: 10, KZ: 10, BY: 9, UA: 9, AM: 8, AZ: 9, GE: 9, KG: 9, UZ: 9, TJ: 9,
+};
+const maxNational = (c: CountryCode) =>
+  NATIONAL_MAX[c] ?? Math.max(4, 15 - getCountryCallingCode(c).length);
 
 export function PhoneInput({
   country,
@@ -83,6 +90,7 @@ export function PhoneInput({
   onNationalChange,
   onBlur,
   onFocus,
+  dropUp = false,
 }: {
   country: CountryCode;
   national: string; // только национальные цифры (без кода страны)
@@ -91,12 +99,23 @@ export function PhoneInput({
   onNationalChange: (digits: string) => void;
   onBlur?: () => void;
   onFocus?: () => void;
+  dropUp?: boolean; // список стран раскрывать ВВЕРХ, а не вниз (задача 7 — в окне «Чат»)
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Смена «Вставка ↔ Удалить» происходит НЕ мгновенно, а через 1с после действия (появилась первая
+  // цифра / поле полностью очищено). Сам кросс-фейд иконок длится ~300мс. От showClear зависит и
+  // вид кнопки, и её действие — чтобы клик всегда соответствовал показанной иконке.
+  const hasDigits = national.length > 0;
+  const [showClear, setShowClear] = useState(hasDigits);
+  useEffect(() => {
+    const t = window.setTimeout(() => setShowClear(hasDigits), 1000);
+    return () => clearTimeout(t);
+  }, [hasDigits]);
 
   // Полный список стран: приоритетные сверху, дальше по алфавиту (ru).
   const countries = useMemo(() => {
@@ -118,24 +137,42 @@ export function PhoneInput({
     });
   }, [countries, query]);
 
-  // Закрытие по клику вне и по Esc (Esc гасим, чтобы не закрылась вся модалка).
+  // Координаты поля для портала списка. Список стран и затемнение рисуем в <body> (см. ниже),
+  // поэтому позицию выпадашки вычисляем по замеру самого поля.
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  // Открытый список: непрерывно отслеживаем позицию поля (rAF), автофокус в поиск, закрытие по Esc.
+  // Позицию меряем каждый кадр, потому что поле может «уехать» из-за анимации раскрытия формы в
+  // «Перезвоните мне» (имя введено → при первом же действии форма раскрывается и элементы смещаются)
+  // — фиксированный портал обязан следовать за полем, иначе список повиснет на старом месте.
+  // Клик мимо списка закрывает его через оверлей-затемнение (ниже), поэтому отдельного mousedown-
+  // слушателя больше нет — он к тому же считал бы портал-список «внешним» кликом и закрывал его.
   useEffect(() => {
     if (!open) return;
-    const onDocDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    let raf = 0;
+    const track = () => {
+      if (rootRef.current) {
+        const r = rootRef.current.getBoundingClientRect();
+        setRect((prev) =>
+          prev && prev.left === r.left && prev.top === r.top && prev.width === r.width && prev.bottom === r.bottom
+            ? prev
+            : r
+        );
+      }
+      raf = requestAnimationFrame(track);
     };
+    raf = requestAnimationFrame(track);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         setOpen(false);
       }
     };
-    document.addEventListener("mousedown", onDocDown);
     document.addEventListener("keydown", onKey, true);
     // Автофокус в поиск при открытии.
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
     return () => {
-      document.removeEventListener("mousedown", onDocDown);
+      cancelAnimationFrame(raf);
       document.removeEventListener("keydown", onKey, true);
       clearTimeout(t);
     };
@@ -151,18 +188,28 @@ export function PhoneInput({
     } else if (d.startsWith(code) && d.length > code.length) {
       d = d.slice(code.length);
     }
-    onNationalChange(d.slice(0, MAX_NATIONAL));
+    const max = maxNational(country);
+    // Номер уже заполнен до предела: «поверх» менять цифры нельзя — принимаем только УМЕНЬШЕНИЕ
+    // (удаление). Чтобы изменить номер, надо сперва удалить цифры, затем ввести новые.
+    if (national.length >= max && d.length >= national.length) return;
+    // Жёсткий лимит по стране (задача 4): сверх максимума цифры не принимаем.
+    onNationalChange(d.slice(0, max));
   }
 
-  // Вставка из буфера: пытаемся распознать страну по номеру (если он с «+»), иначе — как есть.
+  // Вставка из буфера (задача 3): пытаемся распознать страну по номеру (если он с «+»), иначе —
+  // как есть. Сначала ставим фокус в поле — часть браузеров требует, чтобы целевой input/документ
+  // были в фокусе, иначе navigator.clipboard.readText() молча отклоняется (из-за этого кнопка
+  // «Вставка» в «Перезвоните мне» вела себя иначе, чем в чате).
   async function paste() {
+    inputRef.current?.focus();
     try {
+      if (!navigator.clipboard?.readText) return; // напр. iOS Safari не умеет читать буфер
       const text = await navigator.clipboard.readText();
       if (!text) return;
       const pn = parsePhoneNumberFromString(text, country);
       if (pn?.country) {
         onCountryChange(pn.country);
-        onNationalChange(pn.nationalNumber.slice(0, MAX_NATIONAL));
+        onNationalChange(pn.nationalNumber.slice(0, maxNational(pn.country)));
       } else {
         handleInput(text);
       }
@@ -191,8 +238,12 @@ export function PhoneInput({
         )}
       >
         {/* Кнопка выбора страны: флаг + телефонный код */}
+        {/* onMouseDown preventDefault: не снимаем фокус с поля имени при нажатии — иначе его onBlur
+            раскроет форму, элементы сместятся и click «промахнётся» мимо уехавшей кнопки. Раскрытие
+            произойдёт следом, когда список заберёт фокус себе (см. [[callback-modal]]). */}
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => setOpen((v) => !v)}
           aria-label="Выбрать страну"
           aria-expanded={open}
@@ -220,36 +271,85 @@ export function PhoneInput({
           className="h-full min-w-0 flex-1 bg-transparent px-1 text-left text-ink outline-none placeholder:text-muted"
         />
 
-        {/* Вставить из буфера обмена */}
+        {/* Переключатель «Вставка ↔ Мусорка» (задача 5): поле пустое → кнопка «вставить из буфера»;
+            есть хотя бы одна цифра → красная «мусорка» (очистить). Иконки лежат в одном круглом
+            слоте и перетекают друг в друга (поворот + масштаб + фейд) — видно, что одно сменяет другое. */}
+        {/* onMouseDown preventDefault: та же причина, что у кнопки страны — не даём полю имени
+            расфокуситься на нажатии, чтобы «Вставить/Удалить» сработали с первого тапа даже когда
+            имя уже введено и форма вот-вот раскроется. */}
         <button
           type="button"
-          onClick={paste}
-          aria-label="Вставить из буфера"
-          className="mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:text-ink active:scale-95"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={
+            showClear
+              ? () => {
+                  onNationalChange("");
+                  inputRef.current?.focus();
+                }
+              : paste
+          }
+          aria-label={showClear ? "Очистить номер" : "Вставить из буфера"}
+          className="relative mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors active:scale-95"
         >
           {/* Иконка «вставить»: стрелка развёрнута внутрь (на буфер обмена) */}
-          <svg
-            className="h-5 w-5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+          <span
+            className={cn(
+              "absolute inset-0 flex items-center justify-center text-muted transition-all duration-300 ease-out",
+              showClear ? "rotate-90 scale-50 opacity-0" : "rotate-0 scale-100 opacity-100"
+            )}
           >
-            <path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z" />
-            <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2" />
-            <path d="M16 4h2a2 2 0 0 1 2 2v4" />
-            <path d="M21 14H11" />
-            <path d="m15 10-4 4 4 4" />
-          </svg>
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z" />
+              <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2" />
+              <path d="M16 4h2a2 2 0 0 1 2 2v4" />
+              <path d="M21 14H11" />
+              <path d="m15 10-4 4 4 4" />
+            </svg>
+          </span>
+          {/* Иконка «мусорка» — красная (очистить поле) */}
+          <span
+            className={cn(
+              "absolute inset-0 flex items-center justify-center text-error transition-all duration-300 ease-out",
+              showClear ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-50 opacity-0"
+            )}
+          >
+            <Trash2 className="h-5 w-5" aria-hidden="true" />
+          </span>
         </button>
       </div>
 
-      {/* Выпадающий список стран: поиск + прокручиваемый список */}
-      {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 overflow-hidden rounded-lg border border-hairline bg-bg shadow-float">
+      {/* Список стран рисуем ПОРТАЛОМ в <body>. Иначе backdrop-blur родителя (футер чата) делает
+          себя containing block для fixed-оверлея — затемнение зажимается в пределах строки ввода и
+          не накрывает всё окно. Через портал затемнение накрывает ВЕСЬ экран (оба полноэкранных
+          окна), а клик по любому месту фона закрывает список. Сам список — над затемнением,
+          позиционируется по замеренным координатам поля (вниз или вверх при dropUp). */}
+      {open && rect && typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[80] bg-black/50 animate-fade-in"
+              aria-hidden="true"
+              onClick={() => setOpen(false)}
+            />
+            <div
+              className="fixed z-[81] overflow-hidden rounded-lg border border-hairline bg-bg shadow-float"
+              style={{
+                left: rect.left,
+                width: rect.width,
+                ...(dropUp
+                  ? { bottom: window.innerHeight - rect.top + 4 }
+                  : { top: rect.bottom + 4 }),
+              }}
+            >
           <div className="flex items-center gap-2 border-b border-hairline px-3 py-2">
             <Search className="h-4 w-4 shrink-0 text-muted" />
             <input
@@ -291,8 +391,10 @@ export function PhoneInput({
               ))
             )}
           </div>
-        </div>
-      )}
+            </div>
+          </>,
+          document.body
+        )}
     </div>
   );
 }

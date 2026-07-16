@@ -40,7 +40,7 @@ export function StickyBookingBar({ price }: { price: number }) {
     <div
       id="tour-bookingbar"
       className={cn(
-        "fixed inset-x-0 bottom-[calc(63px_+_env(safe-area-inset-bottom))] z-30 border-t border-hairline bg-bg/95 px-5 py-3 backdrop-blur-lg transition-transform duration-300 lg:bottom-0 lg:hidden",
+        "fixed inset-x-0 bottom-[calc(63px_+_env(safe-area-inset-bottom))] z-30 border-t border-hairline bg-bg/95 px-5 py-3.5 backdrop-blur-lg transition-transform duration-300 lg:bottom-0 lg:hidden",
         show ? "translate-y-0" : "translate-y-full"
       )}
     >
@@ -48,11 +48,11 @@ export function StickyBookingBar({ price }: { price: number }) {
         {/* Цены «взрослый/ребёнок» — каждая в одну строку, на одном уровне с кнопкой.
             Детский тариф равен базовой цене экскурсии, взрослый — на 300 ₽ дороже. */}
         <div className="leading-tight">
-          <p className="font-display text-sm font-bold text-ink">
-            от {formatPrice(price + 300)}<span className="text-[11px] font-normal text-muted">/взрослый</span>
+          <p className="font-display text-[16.8px] font-bold text-ink">
+            от {formatPrice(price + 300)}<span className="text-[13.2px] font-normal text-muted">/взрослый</span>
           </p>
-          <p className="font-display text-sm font-bold text-ink">
-            от {formatPrice(price)}<span className="text-[11px] font-normal text-muted">/ребёнок</span>
+          <p className="font-display text-[16.8px] font-bold text-ink">
+            от {formatPrice(price)}<span className="text-[13.2px] font-normal text-muted">/детский</span>
           </p>
         </div>
         {/* Кнопка справа, по ширине под контент (≈ на 20% уже прежней «во всю ширину») */}

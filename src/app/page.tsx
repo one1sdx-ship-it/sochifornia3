@@ -4,7 +4,8 @@ import { PopularToursSection } from "@/components/sections/popular-tours-section
 import { CategoriesSection } from "@/components/sections/categories-section";
 import { WhyUsSection } from "@/components/sections/why-us-section";
 import { GallerySection } from "@/components/sections/gallery-section";
-import { GuidesSection } from "@/components/sections/guides-section";
+// Импорт блока гидов оставлен для быстрого восстановления (см. ниже, временно скрыт).
+// import { GuidesSection } from "@/components/sections/guides-section";
 import { ReviewsSection } from "@/components/sections/reviews-section";
 import { FaqSection } from "@/components/sections/faq-section";
 import { LeadSection } from "@/components/sections/lead-section";
@@ -25,7 +26,9 @@ export default function HomePage() {
       <CategoriesSection />
       <WhyUsSection />
       <GallerySection />
-      <GuidesSection />
+      {/* Блок гидов «Наша команда» временно скрыт (по просьбе владельца).
+          Чтобы вернуть — раскомментируйте строку ниже. */}
+      {/* <GuidesSection /> */}
       <ReviewsSection />
       <FaqSection />
       <LeadSection />

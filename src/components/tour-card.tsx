@@ -112,17 +112,18 @@ export function TourCard({ tour }: { tour: Tour }) {
           </span>
         </div>
 
-        {/* Отзывы + часы + оценка — на единой белой подложке */}
-        <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        {/* Порядок: продолжительность → отзывы → оценка. Часы — на отдельной, чуть более светлой
+            подложке; отзывы+оценка — на общей белой подложке. */}
+        <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-black backdrop-blur-sm">
+            <Clock className="h-3.5 w-3.5" /> {tour.durationHours} ч
+          </span>
           <span className="flex items-center gap-2.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-black backdrop-blur-sm">
             <span className="inline-flex items-center gap-1">
               <Users className="h-3.5 w-3.5" /> {tour.reviewsCount} отзывов
             </span>
             <span className="inline-flex items-center gap-1 font-semibold">
               <Star className="h-3.5 w-3.5 fill-gold text-gold" /> {tour.rating}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" /> {tour.durationHours} ч
             </span>
           </span>
         </div>

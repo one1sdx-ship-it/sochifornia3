@@ -279,9 +279,18 @@ export function EditableMetaText({
 }
 
 // ── Цена «от» в карточке стоимости: показываем форматированную, правим «сырое» число ──
-export function EditablePrice({ value, className }: { value: number; className?: string }) {
+// field выбирает тариф: «adultPrice» (взрослый, по умолчанию) или «childPrice» (детский).
+export function EditablePrice({
+  value,
+  className,
+  field = "adultPrice",
+}: {
+  value: number;
+  className?: string;
+  field?: "adultPrice" | "childPrice";
+}) {
   const ctx = useInlineEdit();
-  const price = ctx.tour ? ctx.tour.adultPrice : value;
+  const price = ctx.tour ? ctx.tour[field] : value;
   return (
     <EditableText
       as="p"
@@ -290,7 +299,10 @@ export function EditablePrice({ value, className }: { value: number; className?:
       editValue={String(price)}
       numeric
       placeholder="0"
-      onCommit={(v) => ctx.setMeta({ adultPrice: Math.max(0, Math.round(Number(v.replace(/[^\d]/g, "")) || 0)) })}
+      onCommit={(v) => {
+        const n = Math.max(0, Math.round(Number(v.replace(/[^\d]/g, "")) || 0));
+        ctx.setMeta(field === "childPrice" ? { childPrice: n } : { adultPrice: n });
+      }}
     />
   );
 }

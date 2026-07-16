@@ -47,17 +47,19 @@ export function Bubble({
   msg,
   readUpTo,
   tgLinked,
+  onPickContact,
 }: {
   msg: ChatMsg;
   readUpTo: string | null;
   tgLinked: boolean;
+  onPickContact?: (channel: string) => void;
 }) {
   const mine = msg.sender === "CLIENT";
   const staffish = msg.sender === "STAFF";
 
   // Служебные типы рендерятся отдельными карточками по центру/слева.
   if (msg.type === "SYSTEM") {
-    return <AbsenceCard msg={msg} tgLinked={tgLinked} />;
+    return <AbsenceCard msg={msg} tgLinked={tgLinked} onPickContact={onPickContact} />;
   }
   if (msg.type === "PROMO") return <PromoCard msg={msg} />;
   if (msg.type === "TOUR_CARD") return <TourCard msg={msg} />;
@@ -243,17 +245,22 @@ const PICK_GREEN = "#22E34A"; // ярко-зелёный для обводки �
 
 // ── Системный вопрос «где удобнее связаться?» — иконки каналов связи ──
 function AbsenceCard({
-  msg, tgLinked,
+  msg, tgLinked, onPickContact,
 }: {
   msg: ChatMsg;
   tgLinked: boolean;
+  onPickContact?: (channel: string) => void;
 }) {
+  // Ранее сохранённый выбор (приходит в meta системного сообщения) — чтобы после перезагрузки
+  // клиент видел свой выбор, а админ — актуальный канал (задача 5).
+  const savedPick = (msg.meta as { preferredContact?: string } | null)?.preferredContact ?? null;
   // Выбрать можно только один канал (телефон уже указан заранее — нужно лишь выбрать иконку).
   // Если Telegram уже подключён — считаем его выбранным сразу.
-  const [picked, setPicked] = useState<string | null>(tgLinked ? "tg" : null);
+  const [picked, setPicked] = useState<string | null>(savedPick ?? (tgLinked ? "tg" : null));
 
   function choose(ch: (typeof CONTACT_CHANNELS)[number]) {
     setPicked(ch.key); // выбор не снимается повторным нажатием
+    onPickContact?.(ch.key); // сохраняем на сервере — увидит владелец в админке
   }
 
   return (

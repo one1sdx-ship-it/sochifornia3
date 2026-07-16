@@ -54,6 +54,16 @@ export async function GET(req: Request, { params }: Params) {
       })
     : null;
 
+  // Предпочтительный канал офлайн-связи, выбранный клиентом (задача 5): хранится в meta
+  // последнего системного сообщения (вопрос «где удобнее связаться…?»).
+  const sys = await prisma.chatMessage.findFirst({
+    where: { conversationId: id, type: "SYSTEM" },
+    orderBy: { createdAt: "desc" },
+    select: { meta: true },
+  });
+  const preferredContact =
+    (sys?.meta as { preferredContact?: string } | null)?.preferredContact ?? "";
+
   return NextResponse.json({
     messages: messages.map(toWire),
     client: {
@@ -66,6 +76,7 @@ export async function GET(req: Request, { params }: Params) {
       promoCode: conv.promoCode,
       currentTour: tour,
       viewedTours: conv.viewedTours.map((v) => ({ slug: v.slug, title: v.title })),
+      preferredContact,
     },
   });
 }

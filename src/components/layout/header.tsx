@@ -9,12 +9,17 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { SCROLL_TOP_EVENT } from "@/components/smooth-scroll";
 import { CALLBACK_CLOSE_EVENT } from "@/components/callback-modal";
+import { CHAT_OPEN_EVENT } from "@/components/chat/chat-store";
+import { FILTERS_PANEL_TOGGLE_EVENT } from "@/components/filter-tab";
 import { cn } from "@/lib/utils";
 
 export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
+  // Открыта ли мобильная панель «Фильтры» (catalog-filters): шапка выше её по z-index,
+  // поэтому на время панели прячем шапку целиком, чтобы лого/кнопки не торчали поверх.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Закрытие мобильного меню с анимацией «уезжает вправо» (синхронно с slide-out-right)
   const closeMenu = () => {
@@ -36,25 +41,40 @@ export function Header() {
     document.body.style.overflow = open ? "hidden" : "";
   }, [open]);
 
+  useEffect(() => {
+    const onToggle = (e: Event) => setFiltersOpen((e as CustomEvent<boolean>).detail);
+    window.addEventListener(FILTERS_PANEL_TOGGLE_EVENT, onToggle);
+    return () => window.removeEventListener(FILTERS_PANEL_TOGGLE_EVENT, onToggle);
+  }, []);
+
   return (
     <>
     <header
       className={cn(
-        "sticky top-0 z-50 transition-colors duration-300",
+        // z-[61] — выше полноэкранного окна чата (z-60) и его затемнения (z-59), чтобы логотип
+        // и название всегда оставались кликабельными поверх чата (задача 4).
+        "sticky top-0 z-[61] transition-[color,background-color,border-color,opacity] duration-500 ease-out",
         scrolled
           ? "border-b border-hairline bg-bg/80 backdrop-blur-lg"
-          : "border-b border-transparent bg-transparent"
+          : "border-b border-transparent bg-transparent",
+        // Пока открыта панель «Фильтры» — шапка плавно гаснет (500мс, чуть дольше выезда панели:
+        // та за 300мс успевает заслонить лого, остальное мягко дотухает) и некликабельна
+        filtersOpen && "pointer-events-none opacity-0"
       )}
     >
       <div className="container-wide flex h-24 items-center justify-between gap-4">
         <Link
           href="/"
-          className="flex items-center gap-2"
+          // Пока выдвинута боковая панель — логотип в шапке временно скрыт (задача 7).
+          className={cn("flex items-center gap-2 transition-opacity", open && "pointer-events-none opacity-0")}
           aria-label={site.name}
           onClick={() => {
             window.dispatchEvent(new Event(SCROLL_TOP_EVENT));
             // Если открыта панель «Перезвоните мне» — закрываем её сразу.
             window.dispatchEvent(new Event(CALLBACK_CLOSE_EVENT));
+            // Если открыто полноэкранное окно чата — закрываем его, чтобы был виден переход
+            // на главную (задача 4).
+            window.dispatchEvent(new CustomEvent(CHAT_OPEN_EVENT, { detail: false }));
           }}
         >
           <Logo />
@@ -98,7 +118,9 @@ export function Header() {
 
     {/* Мобильное меню */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        // z-[70] — боковое меню (3 черточки) должно открываться ПОВЕРХ полноэкранного окна
+        // чата (z-60), а не за ним (задача 3).
+        <div className="fixed inset-0 z-[70] lg:hidden">
           <div
             className={cn(
               "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
@@ -113,7 +135,17 @@ export function Header() {
             )}
           >
             <div className="flex items-center justify-between">
-              <Logo />
+              {/* Клик по логотипу/названию в панели — переход на главную + закрытие панели (задача 8). */}
+              <Link
+                href="/"
+                aria-label={site.name}
+                onClick={() => {
+                  closeMenu();
+                  window.dispatchEvent(new Event(SCROLL_TOP_EVENT));
+                }}
+              >
+                <Logo />
+              </Link>
               <button
                 type="button"
                 aria-label="Закрыть меню"

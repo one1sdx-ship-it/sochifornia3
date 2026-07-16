@@ -10,6 +10,10 @@ import { CALLBACK_OPEN_EVENT } from "@/components/callback-modal";
 // а список с панелью (CatalogFilters) его слушает.
 export const OPEN_FILTERS_EVENT = "sf:openFiltersPanel";
 
+// Событие «панель фильтров открыта/закрыта» (CustomEvent<boolean>): шлёт CatalogFilters,
+// слушает шапка — прячет свои элементы, пока панель открыта (иначе лого/кнопки торчат поверх неё).
+export const FILTERS_PANEL_TOGGLE_EVENT = "sf:filtersPanelToggle";
+
 // Якорь блока экскурсий на главной — пока он в зоне видимости, кнопка «Фильтры» видна.
 const HOME_ANCHOR = "home-tours-anchor";
 
@@ -100,16 +104,38 @@ export function FilterTab() {
   }, []);
 
   // На главной следим за блоком экскурсий; на остальных страницах наблюдатель не нужен.
+  // Якорь ищем УСТОЙЧИВО: при клиентском переходе на главную pathname меняется раньше, чем
+  // Next вставит её DOM (секция экскурсий асинхронная — данные из БД), и одноразовый
+  // getElementById якорь не находил → наблюдатель не подключался, и кнопка «Фильтры» на
+  // главной не появлялась вовсе до следующей смены страницы. Поэтому, если якоря ещё нет,
+  // ждём его появления через MutationObserver и подключаемся, как только он в DOM.
   useEffect(() => {
     if (pathname !== "/") {
       setInView(false);
       return;
     }
-    const el = document.getElementById(HOME_ANCHOR);
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.15 });
-    io.observe(el);
-    return () => io.disconnect();
+    let io: IntersectionObserver | null = null;
+    let mo: MutationObserver | null = null;
+    const attach = () => {
+      const el = document.getElementById(HOME_ANCHOR);
+      if (!el) return false;
+      io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.15 });
+      io.observe(el);
+      return true;
+    };
+    if (!attach()) {
+      mo = new MutationObserver(() => {
+        if (attach()) {
+          mo?.disconnect();
+          mo = null;
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+    }
+    return () => {
+      io?.disconnect();
+      mo?.disconnect();
+    };
   }, [pathname]);
 
   const openFilters = () => {

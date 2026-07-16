@@ -1,7 +1,12 @@
 import { partners } from "@/data/content";
 import { Reveal } from "@/components/reveal";
 
+// Блок «Нам доверяют отели и курорты Сочи» временно скрыт по просьбе клиента (задача 1).
+// Разметка сохранена — чтобы вернуть блок, поставьте SHOW_PARTNERS = true.
+const SHOW_PARTNERS = false;
+
 export function PartnersSection() {
+  if (!SHOW_PARTNERS) return null;
   return (
     <section className="border-y border-hairline bg-surface py-12">
       <div className="container-wide">
