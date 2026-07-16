@@ -6,6 +6,7 @@ import type { Tour, TourCategory } from "@/data/types";
 import { categories } from "@/data/types";
 import { TourCard } from "@/components/tour-card";
 import { OPEN_FILTERS_EVENT, FILTERS_PANEL_TOGGLE_EVENT } from "@/components/filter-tab";
+import { startScroll, stopScroll } from "@/components/smooth-scroll";
 import { cn, formatPrice } from "@/lib/utils";
 
 type SortKey = "popular" | "price-asc" | "price-desc";
@@ -75,12 +76,13 @@ export function CatalogFilters({
   // Уход со страницы с открытой панелью — возвращаем шапку
   useEffect(() => () => { notifyHeader(false); }, []);
 
-  // Блокируем прокрутку фона, пока открыта панель (как в меню сайта)
+  // Блокируем прокрутку фона, пока открыта панель. Голого overflow:hidden мало:
+  // Lenis сам крутит window.scrollTo по wheel/touch, поэтому stopScroll/startScroll
+  // (останавливают и Lenis, замки́ считаются — см. smooth-scroll.tsx).
   useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
+    if (!open) return;
+    stopScroll();
+    return () => startScroll();
   }, [open]);
 
   // Открытие панели фильтров единой плавающей кнопкой «Фильтры» (см. filter-tab.tsx):
@@ -191,15 +193,7 @@ export function CatalogFilters({
           <div className="flex items-center gap-3">
             <label className="hidden items-center gap-2 text-sm text-muted sm:flex">
               Сортировка
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortKey)}
-                className="rounded-md border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary"
-              >
-                <option value="popular">По популярности</option>
-                <option value="price-asc">Сначала дешевле</option>
-                <option value="price-desc">Сначала дороже</option>
-              </select>
+              <SortSelect value={sort} onChange={setSort} />
             </label>
           </div>
         </div>
@@ -229,7 +223,8 @@ export function CatalogFilters({
         <div className="fixed inset-0 z-[65] lg:hidden">
           <div
             className={cn(
-              "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+              // touch-none — жест по затемнению не должен прокручивать страницу под панелью
+              "absolute inset-0 touch-none bg-black/40 backdrop-blur-sm transition-opacity duration-300",
               closing ? "opacity-0" : "opacity-100"
             )}
             onClick={() => {
@@ -244,8 +239,10 @@ export function CatalogFilters({
               closing ? "animate-slide-out-left" : "animate-slide-in-left"
             )}
           >
+            {/* Вместо надписи «Фильтры» — сортировка (что это панель фильтров, ясно и так).
+                Логика и стейт — те же, что у селекта в десктоп-тулбаре. */}
             <div className="flex items-center justify-between">
-              <h3 className="font-display text-xl font-bold text-ink">Фильтры</h3>
+              <h3 className="font-display text-xl font-bold text-ink">Сортировка</h3>
               <button
                 type="button"
                 onClick={closeFilters}
@@ -255,7 +252,8 @@ export function CatalogFilters({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-6 flex-1 overflow-y-auto">{filtersPanel}</div>
+            <SortSelect value={sort} onChange={setSort} className="mt-4 w-full" />
+            <div className="mt-6 flex-1 overflow-y-auto overscroll-contain">{filtersPanel}</div>
             <button
               onClick={closeFilters}
               className="mt-6 h-12 w-full rounded-full bg-primary font-medium text-primary-fg"
@@ -266,6 +264,33 @@ export function CatalogFilters({
         </div>
       )}
     </div>
+  );
+}
+
+// Селект сортировки: общий для десктоп-тулбара и мобильной панели (одна логика и один стейт)
+function SortSelect({
+  value,
+  onChange,
+  className,
+}: {
+  value: SortKey;
+  onChange: (v: SortKey) => void;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as SortKey)}
+      aria-label="Сортировка"
+      className={cn(
+        "rounded-md border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-primary",
+        className
+      )}
+    >
+      <option value="popular">По популярности</option>
+      <option value="price-asc">Сначала дешевле</option>
+      <option value="price-desc">Сначала дороже</option>
+    </select>
   );
 }
 

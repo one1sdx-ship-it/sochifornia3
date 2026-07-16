@@ -16,55 +16,101 @@ const SLIDES = 7;
 // «Мобильная версия» = ширина меньше lg (как и нижняя навигация lg:hidden)
 const MOBILE_MQ = "(max-width: 1023px)";
 
+// Фазы «звёздного шоу» у оценки: появление карточки на экране →
+// burst (из звезды выдвигаются ещё 4) → sparkle (пятёрка блестит 3с волной) →
+// collapse (складываются обратно в одну) → dance (звезда подрастает и, как танцор,
+// поворачивается левым/правым боком) → done. Играет один раз за монтирование.
+type StarPhase = "idle" | "burst" | "sparkle" | "collapse" | "dance" | "done";
+
 export function TourCard({ tour }: { tour: Tour }) {
   // Карусель карточки = галерея тура (синхронно со страницей). Пусто — заглушка.
   const images = tour.gallery.length > 0 ? tour.gallery : Array.from({ length: SLIDES }, () => tour.image);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  // Название экскурсии (h3) — по его появлению из-под нижней панели стартует звёздное шоу
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  // Шоу играем один раз за монтирование (защита от повторного запуска при смене mq)
+  const starStartedRef = useRef(false);
   const router = useRouter();
   // Индекс активного фото: общий для свайпера главного фото и подсветки в ленте-карусели.
   const [activePhoto, setActivePhoto] = useState(0);
 
-  // Мобайл: true, когда карточка проходит через центр экрана — тогда «Подробнее» синеет
-  const [centered, setCentered] = useState(false);
-  // «Подробнее» синеет НЕ сразу, а через 2с после того, как блок оказался по центру (мобайл)
+  // Текущая фаза звёздного шоу у оценки (см. StarPhase)
+  const [starPhase, setStarPhase] = useState<StarPhase>("idle");
+
+  // «Бронь» синеет, пока НАЗВАНИЕ экскурсии находится выше середины экрана
   const [ctaBlue, setCtaBlue] = useState(false);
 
-  // Мобайл: подсветка «Подробнее», когда карточка пересекает центр экрана.
-  // rootMargin -50%/-50% превращает область наблюдения в горизонтальную «линию» по центру вьюпорта.
+  // Подсветка «Бронь» по позиции названия относительно линии на 62% высоты экрана
+  // (немного ниже вертикального центра). rootMargin -62%/-38% сжимает область
+  // наблюдения в горизонтальную «линию» на 62% вьюпорта, поэтому колбэк срабатывает,
+  // когда название пересекает эту линию. Выше линии → синяя, на/ниже → гаснет.
+  // Работает на всех устройствах (десктоп + мобайл); ховер обрабатывается отдельно через group-hover.
   useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
+    const title = titleRef.current;
+    if (!title) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        const r = entry.boundingClientRect;
+        const titleCenter = r.top + r.height / 2;
+        setCtaBlue(titleCenter < window.innerHeight * 0.62);
+      },
+      { rootMargin: "-62% 0px -38% 0px", threshold: 0 }
+    );
+    io.observe(title);
+    return () => io.disconnect();
+  }, []);
+
+  // Старт звёздного шоу — один раз за монтирование. При reduced-motion не играем вовсе.
+  // Момент старта: карточку поднимают снизу, и её название (h3) выезжает из-под нижней
+  // панели с 4 кнопками. Ловим это так — наблюдаем название, сжав низ области наблюдения
+  // на высоту нижней навигации (#mobile-bottom-nav): пересечение наступает ровно когда
+  // название поднялось до верхнего края панели. На десктопе панель скрыта (высота 0) →
+  // шоу стартует при появлении названия во вьюпорте.
+  useEffect(() => {
+    const title = titleRef.current;
+    if (!title || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const mq = window.matchMedia(MOBILE_MQ);
     let io: IntersectionObserver | null = null;
-    const setup = () => {
+    const fire = () => {
+      if (starStartedRef.current) return;
+      starStartedRef.current = true;
       io?.disconnect();
-      if (!mq.matches) {
-        setCentered(false); // десктоп — только :hover, авто-подсветки нет
-        return;
-      }
-      io = new IntersectionObserver(([entry]) => setCentered(entry.isIntersecting), {
-        rootMargin: "-50% 0px -50% 0px",
+      io = null;
+      setStarPhase("burst");
+    };
+    const setup = () => {
+      if (starStartedRef.current) return;
+      io?.disconnect();
+      // Высота нижней панели с 4 кнопками; на десктопе она скрыта (display:none) → 0.
+      const nav = document.getElementById("mobile-bottom-nav");
+      const navH = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+      io = new IntersectionObserver(([e]) => e.isIntersecting && fire(), {
+        rootMargin: `0px 0px -${navH}px 0px`,
         threshold: 0,
       });
-      io.observe(el);
+      io.observe(title);
     };
     setup();
-    mq.addEventListener("change", setup);
+    mq.addEventListener("change", setup); // высота панели зависит от мобайл/десктоп — пересобираем
     return () => {
       io?.disconnect();
       mq.removeEventListener("change", setup);
     };
   }, []);
 
-  // 2-секундная пауза перед посинением; если блок ушёл из центра раньше — отменяем
+  // Автопереключение фаз шоу: длительности подобраны под транзишены/анимации ниже
   useEffect(() => {
-    if (!centered) {
-      setCtaBlue(false);
-      return;
-    }
-    const t = setTimeout(() => setCtaBlue(true), 2000);
+    const timeline: Partial<Record<StarPhase, [StarPhase, number]>> = {
+      burst: ["sparkle", 800], // 4 звезды доехали (стагер 90мс + транзишен 300мс)
+      sparkle: ["collapse", 3000], // блестят ровно 3 секунды
+      collapse: ["dance", 650], // втянулись, подложка вернулась к исходной ширине
+      dance: ["done", 1200], // «танец» ~1.1с + небольшой запас
+    };
+    const step = timeline[starPhase];
+    if (!step) return;
+    const t = setTimeout(() => setStarPhase(step[0]), step[1]);
     return () => clearTimeout(t);
-  }, [centered]);
+  }, [starPhase]);
 
   // «Выбрать»: сразу уходим на страницу экскурсии и просим её открыть панель заявки.
   // Флаг читает [[lead-overlay]] при монтировании. Переход клиентский (маршрут уже предзагружен
@@ -79,10 +125,28 @@ export function TourCard({ tour }: { tour: Tour }) {
   // тезисы для чипов-пилюль: сортируем по длине — аккуратная «лесенка» при выравнивании вправо
   const highlights = [...tour.highlights].sort((a, b) => b.length - a.length);
 
-  // Общие классы правой кнопки «Бронь»: синеет при ховере (десктоп) и через 2с в центре (мобайл).
+  // Общие классы правой кнопки «Бронь»: синеет при ховере (десктоп) и пока название выше линии 62% экрана.
   const bookCls = cn(
     "transition-colors duration-300 active:scale-95 group-hover:bg-primary group-hover:text-primary-fg",
     ctaBlue && "bg-primary text-primary-fg"
+  );
+
+  // Пятёрка звёзд раскрыта в фазах burst и sparkle, в остальных — одна звезда
+  const starsExpanded = starPhase === "burst" || starPhase === "sparkle";
+  // Дробную часть рейтинга показываем «долей» главной звезды: слева белая часть, справа
+  // жёлтая. Долю округляем ВНИЗ до 0.33 (напр. 4.9 → жёлтые ⅔ звезды, 4.6 → треть),
+  // ровно 5.0 — звезда целиком жёлтая. Долю рисуем ТОЛЬКО пока раскрыта пятёрка; в покое
+  // (в начале и в конце) главная звезда всегда цельно-жёлтая.
+  const RATING_STEP = 0.33;
+  const yellowFrac =
+    tour.rating >= 5
+      ? 1
+      : Math.floor((tour.rating - Math.floor(tour.rating)) / RATING_STEP) * RATING_STEP;
+  const partialStar = yellowFrac < 1;
+  // Классы анимаций главной звезды (блеск в sparkle, «танец» в dance) — общие для обоих режимов
+  const mainStarAnim = cn(
+    starPhase === "sparkle" && "animate-star-twinkle",
+    starPhase === "dance" && "animate-star-dance"
   );
 
   return (
@@ -123,7 +187,48 @@ export function TourCard({ tour }: { tour: Tour }) {
               <Users className="h-3.5 w-3.5" /> {tour.reviewsCount} отзывов
             </span>
             <span className="inline-flex items-center gap-1 font-semibold">
-              <Star className="h-3.5 w-3.5 fill-gold text-gold" /> {tour.rating}
+              {/* Звёздное шоу. Контейнер бейджей заякорен справа (right-3), поэтому при росте
+                  ширины ряда звёзд подложка, «N отзывов» с иконкой и бейдж с часами сами плавно
+                  уезжают влево, освобождая место, а при схлопывании возвращаются обратно. */}
+              <span className="inline-flex items-center">
+                {/* Главная звезда: блестит вместе со всеми, затем «танцует».
+                    Долю (для рейтинга < 5) рисуем только пока раскрыта пятёрка — два наложенных
+                    слоя: снизу белая звезда целиком, сверху жёлтая, обрезанная слева по clip-path
+                    так, что жёлтой остаётся правая доля yellowFrac (0.25/0.5/0.75). Контур белого
+                    слоя золотой — чтобы силуэт читался на белой подложке бейджа. В покое — цельная. */}
+                {partialStar && starsExpanded ? (
+                  <span className={cn("relative inline-flex h-3.5 w-3.5 shrink-0", mainStarAnim)}>
+                    <Star className="absolute inset-0 h-3.5 w-3.5 fill-white text-gold" />
+                    <Star
+                      className="absolute inset-0 h-3.5 w-3.5 fill-gold text-gold"
+                      style={{ clipPath: `inset(0 0 0 ${(1 - yellowFrac) * 100}%)` }}
+                    />
+                  </span>
+                ) : (
+                  <Star className={cn("h-3.5 w-3.5 shrink-0 fill-gold text-gold", mainStarAnim)} />
+                )}
+                {/* 4 дополнительные звезды: выдвигаются из главной (ширина 0 → 14px со стагером),
+                    втягиваются в обратном порядке — справа налево */}
+                {[0, 1, 2, 3].map((i) => (
+                  <Star
+                    key={i}
+                    className={cn(
+                      "h-3.5 shrink-0 fill-gold text-gold transition-all duration-300 ease-out",
+                      starsExpanded ? "ml-[3px] w-3.5 scale-100 opacity-100" : "ml-0 w-0 scale-50 opacity-0",
+                      starPhase === "sparkle" && "animate-star-twinkle"
+                    )}
+                    style={{
+                      transitionDelay: starsExpanded ? `${90 * i}ms` : `${60 * (3 - i)}ms`,
+                      // Волна блеска: каждая звезда мерцает с небольшим сдвигом фазы
+                      animationDelay: starPhase === "sparkle" ? `${140 * (i + 1)}ms` : undefined,
+                    }}
+                  />
+                ))}
+              </span>
+              {/* Изюминка: на время «танца» оценка тоже отливает золотом */}
+              <span className={cn("transition-colors duration-500", starPhase === "dance" && "text-gold")}>
+                {tour.rating}
+              </span>
             </span>
           </span>
         </div>
@@ -154,7 +259,7 @@ export function TourCard({ tour }: { tour: Tour }) {
 
       {/* Контент */}
       <div className="flex flex-1 flex-col p-5">
-        <h3 className="font-display text-lg font-semibold leading-snug text-ink">{tour.title}</h3>
+        <h3 ref={titleRef} className="font-display text-lg font-semibold leading-snug text-ink">{tour.title}</h3>
         <p className="mt-2 line-clamp-2 text-sm text-body">{tour.excerpt}</p>
 
         <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
@@ -202,7 +307,7 @@ export function TourCard({ tour }: { tour: Tour }) {
               <span className="text-xs text-muted">/чел</span>
             </p>
             {/* Двойная кнопка «Смотреть | Выбрать»: пульсирует целиком (как раньше «Подробнее»).
-                Правая часть «Выбрать» синеет при ховере (десктоп) и через 2с в центре экрана (мобайл).
+                Правая часть «Бронь» синеет при ховере (десктоп) и пока название экскурсии выше центра экрана.
                 relative z-10 — на КОНТЕЙНЕРЕ: пульсация (will-change: transform) уже создаёт свой
                 stacking context, поэтому z-10 на вложенной кнопке не срабатывал — клик проваливался
                 на растянутую ссылку карточки (z-0). Поднимаем над ссылкой весь блок, а обе половины

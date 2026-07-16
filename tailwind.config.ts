@@ -110,6 +110,24 @@ const config: Config = {
           "0%, 70%, 100%": { transform: "translateY(0)", opacity: "1" },
           "35%": { transform: "translateY(-4px)", opacity: "0.7" },
         },
+        // Звёзды рейтинга в карточке: мягкое мерцание с едва заметным золотым свечением
+        // (фаза блеска, волна создаётся каскадом animation-delay на самих звёздах).
+        "star-twinkle": {
+          "0%, 100%": { transform: "scale(1)", filter: "brightness(1)" },
+          "50%": {
+            transform: "scale(1.18)",
+            filter: "brightness(1.15) drop-shadow(0 0 2px rgb(var(--gold) / 0.3))",
+          },
+        },
+        // «Танец» звезды после схлопывания пятёрки: подрастает и, как танцор, поворачивается
+        // к зрителю левым, затем правым боком (rotateY с perspective), после — обратно.
+        "star-dance": {
+          "0%, 100%": { transform: "perspective(120px) scale(1) rotateY(0deg)" },
+          "20%": { transform: "perspective(120px) scale(1.3) rotateY(0deg)" },
+          "40%": { transform: "perspective(120px) scale(1.34) rotateY(-42deg)" },
+          "65%": { transform: "perspective(120px) scale(1.34) rotateY(42deg)" },
+          "85%": { transform: "perspective(120px) scale(1.26) rotateY(0deg)" },
+        },
       },
       animation: {
         "fade-up": "fade-up 0.6s cubic-bezier(0.16,1,0.3,1) both",
@@ -124,6 +142,8 @@ const config: Config = {
         "kaifun-pulse": "kaifun-pulse 1.2s ease-in-out infinite",
         "pencil-wiggle": "pencil-wiggle 1.6s ease-in-out infinite",
         "arrow-hint": "arrow-hint 1.5s ease-in-out infinite",
+        "star-twinkle": "star-twinkle 1s ease-in-out infinite",
+        "star-dance": "star-dance 1.1s ease-in-out both",
       },
     },
   },

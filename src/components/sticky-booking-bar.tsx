@@ -47,7 +47,7 @@ export function StickyBookingBar({ price }: { price: number }) {
       <div className="flex items-center justify-between gap-4">
         {/* Цены «взрослый/ребёнок» — каждая в одну строку, на одном уровне с кнопкой.
             Детский тариф равен базовой цене экскурсии, взрослый — на 300 ₽ дороже. */}
-        <div className="leading-tight">
+        <div className="space-y-1.5 leading-tight">
           <p className="font-display text-[16.8px] font-bold text-ink">
             от {formatPrice(price + 300)}<span className="text-[13.2px] font-normal text-muted">/взрослый</span>
           </p>
