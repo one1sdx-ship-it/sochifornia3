@@ -126,6 +126,33 @@ export function PhoneInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // ── Расширение поля по горизонтали ТОЛЬКО при необходимости ────────────────
+  // На узких экранах набранный номер может не влезать в поле (флаг + код + номер + кнопка).
+  // Меряем реальную ширину текста «призрачным» span-ом (тот же шрифт, что у input) и, если текст
+  // шире доступного места, расширяем ВСЁ поле ровно на недостающие пиксели (не шире окна − 2rem).
+  // Пока номер помещается — extra = 0 и поле ведёт себя ровно как раньше.
+  const ghostRef = useRef<HTMLSpanElement>(null);
+  const [extra, setExtra] = useState(0);
+  const extraRef = useRef(0);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = inputRef.current;
+      const g = ghostRef.current;
+      if (!el || !g) return;
+      // Базовая ширина input-а БЕЗ текущего расширения (расширение целиком достаётся input-у).
+      const base = el.clientWidth - extraRef.current;
+      // +8px — горизонтальные паддинги input (px-1) + небольшой запас под каретку.
+      const need = Math.max(0, Math.ceil(g.offsetWidth + 8 - base));
+      if (need !== extraRef.current) {
+        extraRef.current = need;
+        setExtra(need);
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [national, country]);
+
   // Смена «Вставка ↔ Удалить» происходит НЕ мгновенно, а через 1с после действия (появилась первая
   // цифра / поле полностью очищено). Сам кросс-фейд иконок длится ~300мс. От showClear зависит и
   // вид кнопки, и её действие — чтобы клик всегда соответствовал показанной иконке.
@@ -319,7 +346,25 @@ export function PhoneInput({
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div
+      ref={rootRef}
+      className="relative"
+      // Расширение при переполнении: шире родителя на недостающие px (но не шире окна − 2rem),
+      // остаётся по центру за счёт left 50% + translateX(−50%). Без переполнения — стили не заданы.
+      style={
+        extra
+          ? {
+              width: `min(calc(100% + ${extra}px), calc(100vw - 2rem))`,
+              left: "50%",
+              transform: "translateX(-50%)",
+            }
+          : undefined
+      }
+    >
+      {/* «Призрак» для замера ширины текста номера: невидим, на раскладку не влияет. */}
+      <span ref={ghostRef} aria-hidden="true" className="invisible absolute left-0 top-0 -z-10 whitespace-pre">
+        {formatNational(national, country)}
+      </span>
       <div
         // «Утопленный» вид поля (bg-surface-2 + внутренняя тень) — чтобы поле явно
         // читалось как поле ввода, а не как кнопка.

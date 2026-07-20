@@ -11,8 +11,34 @@ export type SavePayload =
   | { type: "tariffs"; tariffs: { label: string; price: number }[] }
   | { type: "gallery"; images: { url: string; alt?: string }[] };
 
+// Способ загрузки: true → напрямую в Vercel Blob (прод), false → FormData на сервер (dev).
+// Узнаём один раз за сессию у GET /api/admin/upload.
+let blobMode: boolean | null = null;
+
 // Загрузка одного изображения. Возвращает URL сохранённого файла.
 export async function uploadImage(file: File): Promise<string> {
+  if (blobMode === null) {
+    try {
+      const res = await fetch("/api/admin/upload");
+      blobMode = res.ok ? Boolean(((await res.json()) as { blob?: boolean }).blob) : false;
+    } catch {
+      blobMode = false;
+    }
+  }
+
+  // Прод: браузер кладёт файл в Blob напрямую (обходит лимит Vercel 4,5 МБ на запрос).
+  if (blobMode) {
+    const { upload } = await import("@vercel/blob/client");
+    // Имя очищаем: кириллица/пробелы из телефонов ломают путь в Blob.
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_") || "photo";
+    const blob = await upload(`tours/${Date.now()}-${safeName}`, file, {
+      access: "public",
+      handleUploadUrl: "/api/admin/upload",
+    });
+    return blob.url;
+  }
+
+  // Dev: файл идёт на сервер и сохраняется в public/uploads.
   const form = new FormData();
   form.append("file", file);
   const res = await fetch("/api/admin/upload", { method: "POST", body: form });
