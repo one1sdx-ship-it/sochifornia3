@@ -15,6 +15,10 @@ import { playPing, unlockAudio, vibrate } from "@/components/chat/chat-sounds";
 const NUDGE_VIEWS = 3; // робот предлагает помощь после 3 просмотренных экскурсий…
 const NUDGE_TIME_MS = 2 * 60_000; // …или после 2 минут на сайте
 
+// Ключ sessionStorage: «чат был открыт» — чтобы после перезагрузки страницы (F5/Ctrl+F5)
+// пользователь остался в полноэкранном окне чата.
+const CHAT_REOPEN_KEY = "chat:open";
+
 export function ChatWidget() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -53,6 +57,11 @@ export function ChatWidget() {
     };
     window.addEventListener(CHAT_OPEN_EVENT, onOpen);
     if (new URLSearchParams(window.location.search).get("chat") === "open") setOpen(true);
+    // Открытый чат переживает перезагрузку страницы (F5/Ctrl+F5): флаг лежит в sessionStorage
+    // (своя вкладка, не мешает другим) — после перезагрузки окно откроется само.
+    try {
+      if (sessionStorage.getItem(CHAT_REOPEN_KEY) === "1") setOpen(true);
+    } catch { /* sessionStorage недоступен */ }
     // Первый клик где угодно «разблокирует» звук для будущих уведомлений.
     const unlock = () => unlockAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
@@ -62,9 +71,13 @@ export function ChatWidget() {
     };
   }, []);
 
-  // Окно открылось → локальный бейдж погашен.
+  // Окно открылось → локальный бейдж погашен. Заодно запоминаем состояние окна
+  // в sessionStorage — открытый чат переживает перезагрузку страницы.
   useEffect(() => {
     if (open) setLocalUnread(0);
+    try {
+      sessionStorage.setItem(CHAT_REOPEN_KEY, open ? "1" : "0");
+    } catch { /* sessionStorage недоступен */ }
   }, [open]);
 
   // ── Приветствие (зависит от страницы) — только пока диалог не создан ──

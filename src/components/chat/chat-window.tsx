@@ -143,14 +143,13 @@ export function ChatWindow({
   };
 
   // Жёсткая прокрутка вниз при КАЖДОМ открытии окна (в т.ч. после перезагрузки F5+Ctrl и после
-  // «закрыл → открыл»). История и картинки могут дозагрузиться уже после появления окна, а плавная
-  // прокрутка при этом «не доезжает» — поэтому прыгаем мгновенно (scrollTop) несколько раз: сразу,
-  // на ближайших кадрах и с задержками, пока лента не устаканится.
+  // «закрыл → открыл»). История и картинки дозагружаются уже ПОСЛЕ появления окна (поллинг,
+  // сеть) — разовых прыжков недостаточно. Поэтому на всё время открытого окна работает «пиннинг»:
+  // каждые 200мс, пока пользователь у низа ленты (stickRef), мгновенно доводим scrollTop до низа.
+  // Как только пользователь пролистнул историю вверх — пиннинг не мешает (stickRef=false).
   useEffect(() => {
     if (!open) return;
     stickRef.current = true;
-    const el = listRef.current;
-    if (!el) return;
     const toBottom = () => {
       const node = listRef.current;
       if (node) node.scrollTop = node.scrollHeight;
@@ -160,10 +159,15 @@ export function ChatWindow({
       requestAnimationFrame(toBottom),
       requestAnimationFrame(() => requestAnimationFrame(toBottom)),
     ];
-    const timers = [60, 160, 320, 600, 1000].map((ms) => setTimeout(toBottom, ms));
+    const pin = setInterval(() => {
+      const node = listRef.current;
+      if (!node || !stickRef.current) return;
+      // Не у низа (контент подрос из-за истории/картинок) → мгновенно доводим вниз.
+      if (node.scrollHeight - node.scrollTop - node.clientHeight > 1) toBottom();
+    }, 200);
     return () => {
       rafs.forEach(cancelAnimationFrame);
-      timers.forEach(clearTimeout);
+      clearInterval(pin);
     };
   }, [open]);
 

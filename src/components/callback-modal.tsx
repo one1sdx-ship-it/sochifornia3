@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, CornerDownLeft, Loader2, Pencil, User, X } from "lucide-react";
+import { Check, ChevronLeft, Loader2, Pencil, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeadData, setLeadField } from "@/components/lead-store";
 import { stopScroll, startScroll } from "@/components/smooth-scroll";
@@ -21,6 +21,12 @@ export const CALLBACK_OPEN_EVENT = "app:callback";
 // Событие «закрыть панель обратного звонка». Шлём из шапки (клик по логотипу/названию), чтобы
 // панель сразу закрывалась при переходе. Слушает владелец состояния [[mobile-nav]].
 export const CALLBACK_CLOSE_EVENT = "app:callback-close";
+
+// Кнопка «Подтвердить» (после ввода имени) живёт НЕ в самой панели, а внизу экрана — на месте
+// нижней навигации из 4 кнопок [[mobile-nav]] (задача 3). Панель сообщает событием, надо ли её
+// показывать (detail: boolean), а нажатие возвращается обратным событием.
+export const CALLBACK_NAME_CONFIRM_EVENT = "app:callback-name-confirm";
+export const CALLBACK_NAME_SUBMIT_EVENT = "app:callback-name-submit";
 
 // Пауза перед «уездом» кнопок влево и длительность самого слайда (совпадает с animate-slide-*).
 const DELAY_MS = 500;
@@ -205,6 +211,41 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
       cancelAnimationFrame(raf2);
     };
   }, [open, revealed, step]);
+  // ── Кнопка «Подтвердить» внизу экрана (задача 3) ────────────────────────────
+  // Показывать её надо, пока панель открыта, имя введено и форма ещё не раскрыта. Сама кнопка
+  // рисуется в [[mobile-nav]] на месте нижней навигации — сюда приходит только факт нажатия.
+  // Появляется не сразу, а через 1с после ввода последнего символа имени: таймер перезапускается
+  // на каждое изменение поля. Скрывается — мгновенно (без задержки).
+  const wantNameConfirm = open && !revealed && data.name.trim().length > 0;
+  const [showNameConfirm, setShowNameConfirm] = useState(false);
+  useEffect(() => {
+    if (!wantNameConfirm) {
+      setShowNameConfirm(false);
+      return;
+    }
+    const t = window.setTimeout(() => setShowNameConfirm(true), 1000);
+    return () => clearTimeout(t);
+  }, [wantNameConfirm, data.name]);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(CALLBACK_NAME_CONFIRM_EVENT, { detail: showNameConfirm }));
+  }, [showNameConfirm]);
+  // При размонтировании — снимаем кнопку, чтобы навигация не осталась спрятанной.
+  useEffect(
+    () => () => {
+      window.dispatchEvent(new CustomEvent(CALLBACK_NAME_CONFIRM_EVENT, { detail: false }));
+    },
+    []
+  );
+  // Нажали «Подтвердить»: снимаем фокус с поля имени (закрывается клавиатура) и раскрываем форму.
+  useEffect(() => {
+    const onSubmit = () => {
+      nameRef.current?.blur();
+      setRevealed(true);
+    };
+    window.addEventListener(CALLBACK_NAME_SUBMIT_EVENT, onSubmit);
+    return () => window.removeEventListener(CALLBACK_NAME_SUBMIT_EVENT, onSubmit);
+  }, []);
+
   // «Изменить» в подвале: то же, что клик по полю имени — вернуть подпись-вопрос и поле на место.
   const startEditName = () => {
     setRevealed(false);
@@ -671,27 +712,11 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                             // Enter в поле имени — перейти дальше (снять фокус → форма раскрывается).
                             onKeyDown={(e) => e.key === "Enter" && nameRef.current?.blur()}
                             placeholder="Ваше имя"
-                            className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-32 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
+                            className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-4 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
                           />
-                          {/* Как только введено имя — справа в поле плавно появляется мигающая
-                              клавиша «ENTER» (задача 8). Клик — снять фокус и раскрыть форму. */}
-                          {data.name.trim() && (
-                            <button
-                              type="button"
-                              onClick={() => nameRef.current?.blur()}
-                              aria-label="Продолжить"
-                              // Вид «клавиши»: слабо скруглённые углы (rounded-[5px]), выраженный
-                              // контур (border-2) и приподнятая нижняя грань-«ступенька» (shadow),
-                              // при нажатии клавиша «проседает». Центрируем по вертикали через
-                              // inset-y-0 + my-auto, а НЕ через translate — анимация cb-enter
-                              // (пульс) задаёт свой transform и перебила бы центрирование.
-                              // right-[15px]: смещена левее на 7px (было right-2 = 8px).
-                              className="animate-cb-enter absolute inset-y-0 right-[15px] my-auto flex h-8 items-center gap-1 rounded-[5px] border-2 border-primary/70 bg-primary/15 px-2 text-primary shadow-[0_2px_0_rgb(var(--primary)/0.45)] active:translate-y-px active:shadow-none"
-                            >
-                              <CornerDownLeft className="h-4 w-4" strokeWidth={2.5} aria-hidden="true" />
-                              <span className="text-[10px] font-extrabold leading-none">Подтвердить</span>
-                            </button>
-                          )}
+                          {/* Кнопка «Подтвердить» больше НЕ живёт в поле: как только введено имя,
+                              она появляется внизу экрана на месте нижней навигации (задача 3) —
+                              см. CALLBACK_NAME_CONFIRM_EVENT и [[mobile-nav]]. */}
                         </div>
                         {/* Подпись под именем — «НЕ обязательно», зелёная. На 30% крупнее базового
                             text-xs (0.75rem × 1.3 = 0.975rem). Текст обёрнут в inline-block с

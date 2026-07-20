@@ -157,16 +157,27 @@ export function Header() {
             </div>
             <nav className="mt-8 flex flex-col gap-1">
               {/* В мобильном меню раздел «Гиды» скрыт (остаётся в десктоп-навигации). */}
-              {nav.filter((item) => item.href !== "/guides").map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={closeMenu}
-                  className="rounded-lg px-4 py-3 text-lg font-medium text-ink transition-colors hover:bg-surface-2"
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {/* «Блог» временно неактивен: показываем серым, без перехода (задача 4). */}
+              {nav.filter((item) => item.href !== "/guides").map((item) =>
+                item.href === "/blog" ? (
+                  <span
+                    key={item.href}
+                    aria-disabled="true"
+                    className="cursor-default rounded-lg px-4 py-3 text-lg font-medium text-muted/60"
+                  >
+                    {item.label}
+                  </span>
+                ) : (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={closeMenu}
+                    className="rounded-lg px-4 py-3 text-lg font-medium text-ink transition-colors hover:bg-surface-2"
+                  >
+                    {item.label}
+                  </Link>
+                )
+              )}
               <Link
                 href="/#gallery"
                 onClick={closeMenu}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FC, type SVGProps } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FC, type SVGProps } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Search, Trash2, X } from "lucide-react";
 import {
@@ -58,8 +58,14 @@ function Flag({ code, className }: { code: string; className?: string }) {
 
 // Форматирование «на лету»: национальные цифры → человекочитаемый вид для поля
 // (RU → «999 888-77-66», US → «(201) 555-0123»). Без кода страны и без «8».
-const formatNational = (national: string, country: CountryCode) =>
-  national ? new AsYouType(country).input(national) : "";
+const formatNational = (national: string, country: CountryCode) => {
+  if (!national) return "";
+  const s = new AsYouType(country).input(national);
+  // Единый разделитель: библиотека для РФ отдаёт «912 345-67-89» — пробел после кода города
+  // меняем на тире, чтобы все группы разделялись одинаково («912-345-67-89»). Форматы со
+  // скобками (напр. US «(201) 555-0123») не трогаем — там пробел на своём месте.
+  return s.includes("(") ? s : s.replace(/ /g, "-");
+};
 
 // Локализованные названия стран (ru). Может отсутствовать в старых движках — тогда код.
 let regionNames: Intl.DisplayNames | null = null;
@@ -81,6 +87,19 @@ const NATIONAL_MAX: Partial<Record<CountryCode, number>> = {
 };
 const maxNational = (c: CountryCode) =>
   NATIONAL_MAX[c] ?? Math.max(4, 15 - getCountryCallingCode(c).length);
+
+// Позиция в отформатированной строке, слева от которой ровно n цифр («999 888-77-66», n=5 → 6).
+function posAfterDigits(text: string, n: number) {
+  if (n <= 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (/\d/.test(text[i])) {
+      seen++;
+      if (seen === n) return i + 1;
+    }
+  }
+  return text.length;
+}
 
 export function PhoneInput({
   country,
@@ -178,10 +197,78 @@ export function PhoneInput({
     };
   }, [open]);
 
+  // ── Каретка в поле номера (задачи 1 и 2) ───────────────────────────────────
+  // Значение поля — отформатированная маска («999 888-77-66»), поэтому после любого изменения
+  // React перерисовывает строку целиком и браузер сам ставит каретку в конец. Чтобы этого не
+  // происходило, запоминаем позицию каретки не в символах, а в ЦИФРАХ слева от неё, и
+  // восстанавливаем её после перерисовки (useLayoutEffect — до отрисовки кадра, без мигания).
+  const caretDigitsRef = useRef<number | null>(null);
+  // Последняя «узаконенная» позиция каретки — по ней понимаем направление движения (влево/вправо),
+  // чтобы при перепрыгивании разделителя каретка не застревала перед ним.
+  const lastCaretRef = useRef(0);
+
+  useLayoutEffect(() => {
+    const n = caretDigitsRef.current;
+    caretDigitsRef.current = null;
+    const el = inputRef.current;
+    if (n == null || !el || document.activeElement !== el) return;
+    const pos = posAfterDigits(el.value, n);
+    lastCaretRef.current = pos;
+    el.setSelectionRange(pos, pos);
+  }, [national, country]);
+
+  // Задача 1: каретку нельзя поставить после разделителя (пробел/тире/скобка) — только после цифры
+  // (или в самое начало поля). Выделение не трогаем.
+  //   mode "nearest"  — тап/клик мышью: двигаем к ближайшей разрешённой позиции (при равенстве — влево);
+  //   mode "direction"— стрелки/клавиатура: двигаем в ту сторону, куда шёл пользователь, иначе каретка
+  //                     застряла бы перед разделителем и вправо её было бы не увести.
+  function normalizeCaret(mode: "nearest" | "direction" = "direction") {
+    const el = inputRef.current;
+    if (!el) return;
+    const { selectionStart: s, selectionEnd: e, value: v } = el;
+    if (s == null || e == null || s !== e) return;
+    const allowed = (p: number) => p === 0 || /\d/.test(v[p - 1]);
+    let p = s;
+    if (!allowed(p)) {
+      if (mode === "nearest") {
+        let left = p;
+        while (left > 0 && !allowed(left)) left--;
+        let right = p;
+        while (right < v.length && !allowed(right)) right++;
+        p = p - left <= right - p ? left : right;
+      } else if (p > lastCaretRef.current) {
+        while (p < v.length && !allowed(p)) p++;
+      } else {
+        while (p > 0 && !allowed(p)) p--;
+      }
+    }
+    lastCaretRef.current = p;
+    if (p !== s) el.setSelectionRange(p, p);
+  }
+
+  // Клик/тап по полю: браузер ставит каретку ПОСЛЕ обработчика pointerup, а onSelect при повторном
+  // клике в то же место может вообще не сработать (выделение формально не изменилось). Поэтому после
+  // каждого тыка отдельно нормализуем позицию на следующем кадре — тогда правило работает и на
+  // первом, и на всех последующих нажатиях.
+  function normalizeCaretSoon() {
+    requestAnimationFrame(() => normalizeCaret("nearest"));
+  }
+
   // Ввод в поле: оставляем только цифры. Если ввели/вставили с кодом страны или ведущей «8»
   // (частый ввод для РФ) — срезаем лишний ведущий код.
-  function handleInput(raw: string) {
+  function handleInput(el: HTMLInputElement) {
+    const raw = el.value;
+    // Сколько цифр слева от каретки прямо сейчас — столько же должно остаться и после
+    // переформатирования (задача 2: удаление НЕ последней цифры не уводит каретку в конец).
+    const caretPos = el.selectionStart ?? raw.length;
+    applyRaw(raw, (raw.slice(0, caretPos).match(/\d/g) ?? []).length);
+  }
+
+  // Разбор произвольной строки (ввод или вставка) в национальные цифры. digitsBefore — сколько
+  // цифр должно остаться слева от каретки после переформатирования.
+  function applyRaw(raw: string, digitsBefore: number) {
     let d = raw.replace(/\D/g, "");
+    const digitsTotal = d.length;
     const code = getCountryCallingCode(country);
     if (country === "RU") {
       if ((d.startsWith("8") || d.startsWith("7")) && d.length > 10) d = d.slice(1);
@@ -193,7 +280,11 @@ export function PhoneInput({
     // (удаление). Чтобы изменить номер, надо сперва удалить цифры, затем ввести новые.
     if (national.length >= max && d.length >= national.length) return;
     // Жёсткий лимит по стране (задача 4): сверх максимума цифры не принимаем.
-    onNationalChange(d.slice(0, max));
+    const next = d.slice(0, max);
+    // Если срезали ведущий код страны/«8» — цифры сдвинулись влево, каретку сдвигаем на столько же.
+    const cutLead = digitsTotal - d.length;
+    caretDigitsRef.current = Math.max(0, Math.min(digitsBefore - cutLead, next.length));
+    onNationalChange(next);
   }
 
   // Вставка из буфера (задача 3): пытаемся распознать страну по номеру (если он с «+»), иначе —
@@ -211,7 +302,7 @@ export function PhoneInput({
         onCountryChange(pn.country);
         onNationalChange(pn.nationalNumber.slice(0, maxNational(pn.country)));
       } else {
-        handleInput(text);
+        applyRaw(text, Number.MAX_SAFE_INTEGER); // после вставки каретка — в конце номера
       }
       inputRef.current?.focus();
     } catch {
@@ -264,10 +355,16 @@ export function PhoneInput({
           inputMode="tel"
           autoComplete="tel"
           value={formatNational(national, country)}
-          onChange={(e) => handleInput(e.target.value)}
+          onChange={(e) => handleInput(e.target)}
+          onSelect={() => normalizeCaret("direction")}
+          onPointerUp={normalizeCaretSoon}
+          onMouseUp={normalizeCaretSoon}
+          onTouchEnd={normalizeCaretSoon}
+          onClick={normalizeCaretSoon}
+          onFocusCapture={normalizeCaretSoon}
           onBlur={onBlur}
           onFocus={onFocus}
-          placeholder="999 888-77-66"
+          placeholder="999-888-77-66"
           className="h-full min-w-0 flex-1 bg-transparent px-1 text-left text-ink outline-none placeholder:text-muted"
         />
 

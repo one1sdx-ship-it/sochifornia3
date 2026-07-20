@@ -3,11 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowUp, Compass, Images, Phone, PhoneCall, Star } from "lucide-react";
+import { ArrowUp, Compass, CornerDownLeft, Images, Phone, PhoneCall, Star } from "lucide-react";
 import { site } from "@/data/site";
 import { cn } from "@/lib/utils";
 import { smoothScrollToAnchor, smoothScrollToTop } from "@/components/smooth-scroll";
-import { CallbackModal, CALLBACK_CLOSE_EVENT } from "@/components/callback-modal";
+import {
+  CallbackModal,
+  CALLBACK_CLOSE_EVENT,
+  CALLBACK_NAME_CONFIRM_EVENT,
+  CALLBACK_NAME_SUBMIT_EVENT,
+} from "@/components/callback-modal";
 import { ContactFab } from "@/components/contact-fab";
 
 const items = [
@@ -25,6 +30,13 @@ export function MobileNav() {
   const [showPhone, setShowPhone] = useState(false);
   const [callbackOpen, setCallbackOpen] = useState(false); // открыта ли панель «Перезвоните мне»
   const [pinned, setPinned] = useState(false); // тап по свёрнутому кластеру навсегда выдвигает синюю подложку (п.2)
+  // Показывать ли вместо навигации кнопку «Подтвердить» из панели «Перезвоните мне» (задача 3).
+  const [nameConfirm, setNameConfirm] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => setNameConfirm(Boolean((e as CustomEvent<boolean>).detail));
+    window.addEventListener(CALLBACK_NAME_CONFIRM_EVENT, on);
+    return () => window.removeEventListener(CALLBACK_NAME_CONFIRM_EVENT, on);
+  }, []);
   const lastY = useRef(0);
   const zoneRef = useRef<HTMLDivElement>(null); // контекстная зона (кнопка + номер) над навигацией
   const btnRef = useRef<HTMLButtonElement>(null); // белая кнопка «Перезвоните мне»
@@ -313,6 +325,35 @@ export function MobileNav() {
         )}
 
         {/* Нижняя навигация (только мобильные). id — для замера её высоты панелью обратного звонка. */}
+        <div className="relative">
+        {/* Кнопка «Подтвердить» из панели «Перезвоните мне» (задача 3): пока введено имя и форма
+            не раскрыта, она появляется НАД нижней навигацией, слева, с отступом от левого края
+            (pl-8) и зазором до верхнего края панели (pb-6). Появляется плавно (300мс), исчезает
+            почти мгновенно (100мс). Сама навигация при этом остаётся на месте. */}
+        <div
+          aria-hidden={!nameConfirm}
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-full z-10 flex justify-start pb-6 pl-8 transition-opacity ease-out",
+            nameConfirm ? "opacity-100 duration-300" : "opacity-0 duration-100"
+          )}
+        >
+          <button
+            type="button"
+            tabIndex={nameConfirm ? 0 : -1}
+            onClick={() => window.dispatchEvent(new Event(CALLBACK_NAME_SUBMIT_EVENT))}
+            aria-label="Продолжить"
+            // Прежний вид «клавиши» (как когда кнопка стояла в поле имени), увеличенный вдвое:
+            // высота 8→16, контур 2→4, скругление 5→10px, нижняя грань-«ступенька» 2→4px,
+            // иконка и подпись — тоже вдвое. При нажатии клавиша «проседает».
+            className={cn(
+              "animate-cb-enter flex h-16 items-center gap-2 rounded-[10px] border-4 border-primary/70 bg-primary/15 px-4 text-primary shadow-[0_4px_0_rgb(var(--primary)/0.45)] active:translate-y-px active:shadow-none",
+              nameConfirm && "pointer-events-auto"
+            )}
+          >
+            <CornerDownLeft className="h-8 w-8" strokeWidth={2.5} aria-hidden="true" />
+            <span className="text-[20px] font-extrabold leading-none">Подтвердить</span>
+          </button>
+        </div>
         <nav
           id="mobile-bottom-nav"
           // pointer-events-auto — возвращаем тапы, отключённые на внешнем контейнере (см. выше).
@@ -341,6 +382,7 @@ export function MobileNav() {
             })}
           </div>
         </nav>
+        </div>
       </div>
 
       {/* Полноэкранная панель «Перезвоните мне» (между шапкой и нижней навигацией) */}
