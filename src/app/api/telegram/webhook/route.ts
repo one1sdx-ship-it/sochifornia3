@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { put } from "@vercel/blob";
+import { BLOB_TOKEN } from "@/lib/blob-token";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/prisma";
@@ -146,10 +147,10 @@ export async function POST(req: Request) {
 // Сохранить файл: Vercel Blob (прод) или public/uploads/chat (dev).
 async function storeFile(buf: Buffer, ext: string): Promise<string> {
   const name = `${Date.now()}-${randomUUID()}${ext}`;
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (BLOB_TOKEN) {
     const blob = await put(`chat/${name}`, buf, {
       access: "public",
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token: BLOB_TOKEN,
     });
     return blob.url;
   }

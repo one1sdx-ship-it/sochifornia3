@@ -9,6 +9,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getCurrentUser } from "@/lib/session";
+import { BLOB_TOKEN } from "@/lib/blob-token";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ const EXT: Record<string, string> = {
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
-  return NextResponse.json({ blob: Boolean(process.env.BLOB_READ_WRITE_TOKEN) });
+  return NextResponse.json({ blob: Boolean(BLOB_TOKEN) });
 }
 
 export async function POST(req: Request) {
@@ -41,6 +42,7 @@ export async function POST(req: Request) {
       const json = await handleUpload({
         body,
         request: req,
+        token: BLOB_TOKEN,
         onBeforeGenerateToken: async () => ({
           allowedContentTypes: OK_TYPES,
           maximumSizeInBytes: MAX_BYTES,

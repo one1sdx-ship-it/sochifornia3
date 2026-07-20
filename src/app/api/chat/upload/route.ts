@@ -7,6 +7,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { validClientId } from "@/lib/chat-server";
+import { BLOB_TOKEN } from "@/lib/blob-token";
 
 export const runtime = "nodejs";
 
@@ -79,10 +80,10 @@ export async function POST(req: Request) {
 
   const name = `${Date.now()}-${randomUUID()}${ext}`;
 
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (BLOB_TOKEN) {
     const blob = await put(`chat/${name}`, file, {
       access: "public",
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token: BLOB_TOKEN,
     });
     return NextResponse.json({ url: blob.url, kind: isImage ? "image" : "voice" });
   }
