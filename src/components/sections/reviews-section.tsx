@@ -1,11 +1,13 @@
-import { reviews } from "@/data/content";
 import { site } from "@/data/site";
+import { getAllPublishedReviews } from "@/data/reviews-db";
 import { SectionHeading } from "@/components/section-heading";
 import { ReviewCard } from "@/components/review-card";
 import { Reveal } from "@/components/reveal";
 import { Star } from "lucide-react";
 
-export function ReviewsSection() {
+export async function ReviewsSection() {
+  const reviews = await getAllPublishedReviews(6);
+  if (reviews.length === 0) return null; // пока нет опубликованных отзывов — секцию не показываем
   return (
     <section className="bg-surface py-section-sm sm:py-section">
       <div className="container-wide">
@@ -27,8 +29,8 @@ export function ReviewsSection() {
         </div>
 
         <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {reviews.slice(0, 6).map((r, i) => (
-            <Reveal key={r.name} delay={(i % 3) * 80}>
+          {reviews.map((r, i) => (
+            <Reveal key={r.id} delay={(i % 3) * 80}>
               <ReviewCard review={r} />
             </Reveal>
           ))}

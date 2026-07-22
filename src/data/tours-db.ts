@@ -19,6 +19,7 @@ type TourRow = Prisma.TourGetPayload<{ include: typeof tourInclude }>;
 // Маппинг строки БД (с вложенными списками) в привычный формат Tour.
 function mapTour(t: TourRow): Tour {
   return {
+    id: t.id,
     slug: t.slug,
     title: t.title,
     excerpt: t.excerpt,
@@ -88,6 +89,7 @@ export async function getTourEntity(slug: string): Promise<TourEntity | null> {
 // Преобразование полной сущности в привычный формат Tour (для read-only рендера страницы).
 export function toLegacyTour(t: TourEntity): Tour {
   return {
+    id: t.id,
     slug: t.slug,
     title: t.title,
     excerpt: t.excerpt,

@@ -18,6 +18,14 @@ export function SplashScreen() {
   const [visible, setVisible] = useState(true);
   const [hiding, setHiding] = useState(false);
 
+  // Анимацию лого включаем ТОЛЬКО после монтирования на клиенте, а не на SSR-разметке.
+  // Иначе CSS-анимация стартует на серверной разметке при первом кадре, а затем при гидратации
+  // (или ремаунте в StrictMode) DOM-узел переинициализируется и анимация проигрывается ЗАНОВО —
+  // отсюда «двойной» показ через доли секунды. Пока флаг false — лого невидимо (opacity-0),
+  // поэтому единственное проигрывание происходит уже после гидратации, ровно один раз.
+  const [animate, setAnimate] = useState(false);
+  useEffect(() => setAnimate(true), []);
+
   useEffect(() => {
     // Показали SHOW_MS — затем всегда плавно скрываем (см. эффект по [hiding])
     const t = setTimeout(() => setHiding(true), SHOW_MS);
@@ -53,14 +61,17 @@ export function SplashScreen() {
         hiding ? "pointer-events-none opacity-0 duration-500 ease-in" : "opacity-100 duration-300 ease-out"
       )}
     >
-      <div className="flex animate-fade-up flex-col items-center gap-6">
+      <div className={cn("flex flex-col items-center gap-6", animate && "animate-fade-up")}>
         <Image
           src="/LogoSochi.png"
           alt="Sochifornia Travel"
           width={320}
           height={320}
           priority
-          className="animate-splash-title h-[22.1rem] w-[22.1rem] rounded-2xl object-contain sm:h-[30.3875rem] sm:w-[30.3875rem]"
+          className={cn(
+            "h-[22.1rem] w-[22.1rem] rounded-2xl object-contain sm:h-[30.3875rem] sm:w-[30.3875rem]",
+            animate ? "animate-splash-title" : "opacity-0"
+          )}
         />
       </div>
     </div>

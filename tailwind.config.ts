@@ -92,6 +92,10 @@ const config: Config = {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        "fade-out": {
+          "0%": { opacity: "1" },
+          "100%": { opacity: "0" },
+        },
         "kaifun-pulse": {
           "0%, 100%": { transform: "scale(1)" },
           "50%": { transform: "scale(1.05)" },
@@ -139,6 +143,7 @@ const config: Config = {
         "slide-in-up": "slide-in-up 0.32s cubic-bezier(0.16,1,0.3,1) both",
         "slide-out-down": "slide-out-down 0.32s cubic-bezier(0.16,1,0.3,1) both",
         "fade-in": "fade-in 0.25s ease both",
+        "fade-out": "fade-out 0.25s ease forwards",
         "kaifun-pulse": "kaifun-pulse 1.2s ease-in-out infinite",
         "pencil-wiggle": "pencil-wiggle 1.6s ease-in-out infinite",
         "arrow-hint": "arrow-hint 1.5s ease-in-out infinite",

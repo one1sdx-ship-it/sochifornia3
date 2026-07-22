@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Review } from "@/data/content";
+import type { DisplayReview } from "@/data/reviews-db";
 import { ReviewCard } from "@/components/review-card";
+import { ReviewForm } from "@/components/reviews/review-form";
 import { cn } from "@/lib/utils";
 
 // Блок «Отзывы туристов» на странице экскурсии.
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 //   и «Все отзывы» — по клику сразу уводит в раздел «Отзывы» (/reviews) (задача 5).
 // • Переключатель залипает у нижнего края липкой ленты-карусели: его top берётся из
 //   CSS-переменной --tour-strip-bottom, которую задаёт [[tour-hero-carousel]] (задача 6).
-export function TourReviews({ reviews }: { reviews: Review[] }) {
+export function TourReviews({ tourId, reviews }: { tourId: string; reviews: DisplayReview[] }) {
   const router = useRouter();
   // При каждом новом заходе на страницу выбран подраздел «Текущая экскурсия».
   const [tab, setTab] = useState<"current" | "all">("current");
@@ -73,13 +74,24 @@ export function TourReviews({ reviews }: { reviews: Review[] }) {
         </div>
       </div>
 
-      {/* Карточки — только отзывы текущей экскурсии (как было раньше). */}
+      {/* Карточки — опубликованные отзывы текущей экскурсии + форма «Оставить отзыв». */}
       <section className="bg-surface pb-section-sm">
         <div className="container-wide">
-          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {reviews.map((r) => (
-              <ReviewCard key={r.name} review={r} />
-            ))}
+          {reviews.length > 0 ? (
+            <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {reviews.map((r) => (
+                <ReviewCard key={r.id} review={r} />
+              ))}
+            </div>
+          ) : (
+            <p className="mt-8 text-center text-body">
+              Пока нет отзывов об этой экскурсии — станьте первым!
+            </p>
+          )}
+
+          {/* Форма отзыва (для вошедших) / приглашение войти (для гостей). */}
+          <div className="mt-10">
+            <ReviewForm tourId={tourId} />
           </div>
         </div>
       </section>

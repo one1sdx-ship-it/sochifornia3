@@ -3,6 +3,8 @@ import { Inter, Manrope } from "next/font/google";
 import "@/styles/globals.css";
 import { site } from "@/data/site";
 import { ThemeProvider } from "@/components/theme-provider";
+import { CustomerAuthProvider } from "@/components/auth/customer-auth";
+import { getCustomer } from "@/lib/customer-session";
 import { SmoothScroll } from "@/components/smooth-scroll";
 import { TapRescue } from "@/components/tap-rescue";
 import { SplashScreen } from "@/components/splash-screen";
@@ -57,26 +59,32 @@ const jsonLd = {
   aggregateRating: { "@type": "AggregateRating", ratingValue: site.stats.rating, reviewCount: 1200 },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Текущий клиент (вход по телефону) — берём на сервере, чтобы шапка сразу знала
+  // состояние входа без «мигания» кнопки.
+  const customer = await getCustomer();
+
   return (
     <html lang="ru" suppressHydrationWarning className={`${inter.variable} ${manrope.variable}`}>
       <body className="min-h-screen font-sans antialiased">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
         <ThemeProvider>
-          <SmoothScroll />
-          {/* Глобальная страховка тапа: во время инерции прокрутки браузер «съедает» click —
-              здесь он восстанавливается, чтобы любая кнопка срабатывала с первого раза. */}
-          <TapRescue />
-          <SplashScreen />
-          <Header />
-          <main>{children}</main>
-          <Footer />
-          <MobileNav />
-          {/* Единая плавающая кнопка «Фильтры» — одна на весь сайт, здесь (в layout) не пересоздаётся
-              при переходах, поэтому её положение не «прыгает» между главной и каталогом. */}
-          <FilterTab />
-          {/* Онлайн-чат с менеджером: окно + поллинг + бейдж (кнопка «Чат» — в [[contact-fab]]) */}
-          <ChatWidget />
+          <CustomerAuthProvider initialCustomer={customer}>
+            <SmoothScroll />
+            {/* Глобальная страховка тапа: во время инерции прокрутки браузер «съедает» click —
+                здесь он восстанавливается, чтобы любая кнопка срабатывала с первого раза. */}
+            <TapRescue />
+            <SplashScreen />
+            <Header />
+            <main>{children}</main>
+            <Footer />
+            <MobileNav />
+            {/* Единая плавающая кнопка «Фильтры» — одна на весь сайт, здесь (в layout) не пересоздаётся
+                при переходах, поэтому её положение не «прыгает» между главной и каталогом. */}
+            <FilterTab />
+            {/* Онлайн-чат с менеджером: окно + поллинг + бейдж (кнопка «Чат» — в [[contact-fab]]) */}
+            <ChatWidget />
+          </CustomerAuthProvider>
         </ThemeProvider>
       </body>
     </html>

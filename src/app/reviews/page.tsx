@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Star } from "lucide-react";
-import { reviews } from "@/data/content";
 import { site } from "@/data/site";
+import { getAllPublishedReviews } from "@/data/reviews-db";
 import { PageHeader } from "@/components/page-header";
 import { ReviewCard } from "@/components/review-card";
 import { LeadSection } from "@/components/sections/lead-section";
@@ -12,7 +12,8 @@ export const metadata: Metadata = {
   description: "Реальные отзывы о экскурсиях Sochifornia Travel. Более 10 000 туристов, средний рейтинг 4.9. Читайте впечатления наших гостей.",
 };
 
-export default function ReviewsPage() {
+export default async function ReviewsPage() {
+  const reviews = await getAllPublishedReviews(60);
   return (
     <>
       <PageHeader
@@ -33,13 +34,17 @@ export default function ReviewsPage() {
           <p className="text-body">Средняя оценка на основе отзывов {site.stats.clients} туристов</p>
         </Reveal>
 
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {reviews.map((r, i) => (
-            <Reveal key={r.name} delay={(i % 3) * 70}>
-              <ReviewCard review={r} />
-            </Reveal>
-          ))}
-        </div>
+        {reviews.length > 0 ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {reviews.map((r, i) => (
+              <Reveal key={r.id} delay={(i % 3) * 70}>
+                <ReviewCard review={r} />
+              </Reveal>
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-body">Пока нет опубликованных отзывов.</p>
+        )}
 
         <Reveal className="mx-auto mt-12 max-w-2xl rounded-2xl border border-dashed border-hairline bg-surface-2 p-8 text-center">
           <h2 className="font-display text-xl font-bold text-ink">Уже были с нами?</h2>

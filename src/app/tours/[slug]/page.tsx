@@ -13,7 +13,8 @@ import {
   EditableMetaText, TourBlocksGrid, TourBringList, TourChecklistCard, TourProgram,
 } from "@/components/admin/tour-editor/editable-sections";
 import { formatPrice } from "@/lib/utils";
-import { reviews, faqs, guides } from "@/data/content";
+import { faqs, guides } from "@/data/content";
+import { getPublishedReviewsForTour } from "@/data/reviews-db";
 import { categories } from "@/data/types";
 import { site } from "@/data/site";
 import { TourGallery } from "@/components/tour-gallery";
@@ -96,6 +97,8 @@ export default async function TourPage({
   const relatedFallback = related.length > 0 ? related : allTours.filter((t) => t.slug !== tour.slug).slice(0, 3);
   const guideIndex = allTours.findIndex((t) => t.slug === tour.slug);
   const guide = guides[(guideIndex < 0 ? 0 : guideIndex) % guides.length];
+  // Опубликованные отзывы этой экскурсии (из БД).
+  const tourReviews = await getPublishedReviewsForTour(entity.id, 6);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -275,7 +278,7 @@ export default async function TourPage({
           пока листаем и карточки отзывов, и блок «Похожие» — не пропадает вместе с карточками (задача 2). */}
       <div className="relative">
         {/* Отзывы: заголовок по центру + переключатель «Отзывы о текущей экскурсии / Все отзывы» */}
-        <TourReviews reviews={reviews.slice(0, 3)} />
+        <TourReviews tourId={entity.id} reviews={tourReviews} />
 
         {/* Похожие экскурсии */}
         <section className="container-wide py-section-sm">

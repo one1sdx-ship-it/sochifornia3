@@ -156,6 +156,8 @@ model Tour {
   extraTariffs ExtraTariff[] // доп. тарифы (пенсионеры, группа и т.п.)
 
   auditLogs AuditLog[]
+  reviews   Review[] // отзывы клиентов об этой экскурсии
+  favorites Favorite[] // добавления в избранное
 
   @@index([status])
   @@index([category])
@@ -298,6 +300,11 @@ model ChatConversation {
   clientName  String @default("") // имя из формы (необязательное)
   clientPhone String @default("") // телефон из формы (обязательный, E.164)
 
+  // Привязка к зарегистрированному клиенту (вход по телефону): чтобы показывать
+  // историю переписки в личном кабинете. null — анонимный диалог (клиент не входил).
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
   currentTourSlug String @default("") // с какой страницы тура открыт чат (контекст для сотрудника)
 
   // «Продолжить в Telegram»: токен для deep-link t.me/бот?start=c_<token>;
@@ -364,6 +371,123 @@ model ChatViewedTour {
 
   @@unique([conversationId, slug])
   @@index([conversationId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Клиенты (упрощённый вход по номеру телефона) + отзывы + избранное
+// ─────────────────────────────────────────────────────────────
+
+// Посетитель сайта, вошедший по номеру телефона (НЕ сотрудник — те в модели User).
+// Регистрация упрощённая: телефон = логин, подтверждение кодом (пока фиксированный «7777»).
+model Customer {
+  id        String   @id @default(cuid())
+  phone     String   @unique // E.164, служит логином
+  name      String   @default("") // имя, которое клиент показывает в отзывах
+  avatarUrl String   @default("") // аватар клиента (Vercel Blob), необязателен
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions      CustomerSession[] // активные сессии (хранение в БД → выход = удалить)
+  reviews       Review[]
+  favorites     Favorite[]
+  conversations ChatConversation[] // диалоги чата, привязанные к клиенту
+}
+
+// Сессия клиента: токен в httpOnly-cookie, проверка по БД (как у сотрудников через Session).
+model CustomerSession {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([customerId])
+}
+
+// Статусы отзыва (те же три группы, что у экскурсий): Черновик / Активные / Архив.
+enum ReviewStatus {
+  DRAFT // черновик — на модерации, на сайте не виден («Черновик»)
+  PUBLISHED // опубликован админом, виден на сайте («Активные»)
+  ARCHIVED // в архиве («Архив»)
+}
+
+// Отзыв о конкретной экскурсии. Новый отзыв клиента создаётся в DRAFT и появляется
+// на сайте только после «Опубликовать» в админке.
+// tourId/customerId необязательны: клиентский отзыв всегда привязан к туру и аккаунту,
+// а «легаси»/заведённые админом отзывы могут быть общими (без аккаунта, иногда без тура).
+// Правило «один отзыв клиента на тур» контролируется в коде (частичной уникальности с NULL нет).
+model Review {
+  id         String       @id @default(cuid())
+  tourId     String?
+  tour       Tour?        @relation(fields: [tourId], references: [id], onDelete: SetNull)
+  customerId String?
+  customer   Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  status     ReviewStatus @default(DRAFT)
+  rating     Int          @default(5) // оценка 1..5 звёзд
+  text       String       @default("")
+  authorName String       @default("") // имя автора (снимок имени клиента или заданное вручную)
+  phone      String? // телефон, введённый вручную админом (для отзывов без аккаунта)
+
+  // Модерация правок: hadPublished — отзыв когда-либо публиковался;
+  // pendingEdit — клиент отредактировал ранее опубликованный отзыв → он ждёт ремодерации
+  // и показывается в админке в отдельной группе «Правки».
+  hadPublished Boolean @default(false)
+  pendingEdit  Boolean @default(false)
+
+  photos    ReviewPhoto[]    // фото, приложенные к отзыву
+  revisions ReviewRevision[] // история изменений (снимки при каждом сохранении клиентом)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime? // когда опубликован
+  archivedAt  DateTime? // когда отправлен в архив
+
+  @@index([tourId, status])
+  @@index([customerId])
+  @@index([status])
+}
+
+// Снимок состояния отзыва на момент сохранения клиентом (для истории правок в админке).
+// Первая ревизия создаётся при создании отзыва, далее по одной на каждое редактирование.
+model ReviewRevision {
+  id       String @id @default(cuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  rating     Int
+  text       String
+  photos     String[] // снимок URL фото на момент правки
+  authorName String   @default("")
+
+  createdAt DateTime @default(now())
+
+  @@index([reviewId])
+}
+
+// Фото, приложенное к отзыву (загрузка через Vercel Blob).
+model ReviewPhoto {
+  id       String @id @default(cuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  url      String
+  order    Int    @default(0)
+
+  @@index([reviewId])
+}
+
+// Избранная экскурсия клиента («в избранное» на карточках/странице тура).
+model Favorite {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tourId     String
+  tour       Tour     @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, tourId])
+  @@index([customerId])
+  @@index([tourId])
 }
 
 // Подписка на браузерные push-уведомления (Web Push, VAPID).

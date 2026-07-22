@@ -25,7 +25,8 @@ const program = (a: string, b: string, c: string) => [
   { time: "15:00", title: "Свободное время и возвращение", text: c },
 ];
 
-export const tours: Tour[] = [
+// Демо-данные (легаси). id задаём из slug, чтобы соответствовать типу Tour.
+export const tours: Tour[] = ([
   {
     slug: "krasnaya-polyana-day",
     title: "Красная Поляна: канатки и вершины",
@@ -326,7 +327,7 @@ export const tours: Tour[] = [
     excluded: [...baseExcluded, "Вход в пещеру", "Обед"],
     bring: [...baseBring, "Паспорт (для пересечения границы)"],
   },
-];
+] as Omit<Tour, "id">[]).map((t) => ({ id: t.slug, ...t }));
 
 export function getTour(slug: string): Tour | undefined {
   return tours.find((t) => t.slug === slug);

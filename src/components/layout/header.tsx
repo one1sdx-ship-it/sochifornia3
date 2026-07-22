@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Menu, Phone, X } from "lucide-react";
+import { LogIn, Menu, Phone, User, X } from "lucide-react";
 import { nav, site } from "@/data/site";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useCustomerAuth } from "@/components/auth/customer-auth";
 import { Button } from "@/components/ui/button";
 import { SCROLL_TOP_EVENT } from "@/components/smooth-scroll";
 import { CALLBACK_CLOSE_EVENT } from "@/components/callback-modal";
@@ -14,6 +15,7 @@ import { FILTERS_PANEL_TOGGLE_EVENT } from "@/components/filter-tab";
 import { cn } from "@/lib/utils";
 
 export function Header() {
+  const { customer, openLogin } = useCustomerAuth();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -101,6 +103,35 @@ export function Header() {
             {site.phone}
           </a>
           <ThemeToggle />
+          {/* Кнопка входа/кабинета — между переключателем темы и «три чёрточки».
+              Вошёл клиент → ведёт в личный кабинет (иконка пользователя),
+              иначе → открывает окно входа по телефону (иконка «войти»). */}
+          {customer ? (
+            <Link
+              href="/account"
+              aria-label="Личный кабинет"
+              title="Личный кабинет"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+            >
+              {customer.avatarUrl ? (
+                // Обычный <img>: аватар может лежать в Vercel Blob (нет в remotePatterns next/image).
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={customer.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+              ) : (
+                <User className="h-5 w-5" />
+              )}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={openLogin}
+              aria-label="Войти"
+              title="Войти"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-hairline bg-surface text-ink transition-colors hover:text-primary"
+            >
+              <LogIn className="h-5 w-5" />
+            </button>
+          )}
           <Button href="/tours" size="sm" className="hidden sm:inline-flex">
             Выбрать тур
           </Button>

@@ -7,6 +7,7 @@ export type TourCategory =
   | "vip";
 
 export interface Tour {
+  id: string; // id записи в БД (нужен для избранного и др. связей)
   slug: string;
   title: string;
   excerpt: string;

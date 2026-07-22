@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, Loader2, Pencil, User, X } from "lucide-react";
+import { Check, ChevronLeft, CornerDownLeft, Loader2, Pencil, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeadData, setLeadField } from "@/components/lead-store";
 import { stopScroll, startScroll } from "@/components/smooth-scroll";
@@ -211,9 +211,10 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
       cancelAnimationFrame(raf2);
     };
   }, [open, revealed, step]);
-  // ── Кнопка «Подтвердить» внизу экрана (задача 3) ────────────────────────────
-  // Показывать её надо, пока панель открыта, имя введено и форма ещё не раскрыта. Сама кнопка
-  // рисуется в [[mobile-nav]] на месте нижней навигации — сюда приходит только факт нажатия.
+  // ── Кнопка «Подтвердить» рядом с полем имени (задача 2) ──────────────────────
+  // Показывается, пока панель открыта, имя введено и форма ещё не раскрыта. Раньше кнопка
+  // рисовалась внизу экрана в [[mobile-nav]]; теперь она встаёт ВПЛОТНУЮ СЛЕВА от поля «Ваше имя»
+  // (само поле при этом уезжает к правому краю окна) — см. разметку строки ввода имени ниже.
   // Появляется не сразу, а через 1с после ввода последнего символа имени: таймер перезапускается
   // на каждое изменение поля. Скрывается — мгновенно (без задержки).
   const wantNameConfirm = open && !revealed && data.name.trim().length > 0;
@@ -226,31 +227,117 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
     const t = window.setTimeout(() => setShowNameConfirm(true), 1000);
     return () => clearTimeout(t);
   }, [wantNameConfirm, data.name]);
+  // Нажатие «Подтвердить»: снять фокус с поля имени (закрыть клавиатуру) и раскрыть форму.
+  const submitName = () => {
+    nameRef.current?.blur();
+    setRevealed(true);
+  };
+  // Ширина текста введённого имени — чтобы при появлении кнопки «Подтвердить» поле сжималось
+  // по горизонтали ровно под имя. Меряем невидимым зеркалом-спаном (тот же унаследованный шрифт,
+  // что и у input); итоговая ширина поля = ширина текста + место под иконку слева и паддинги.
+  const nameMirrorRef = useRef<HTMLSpanElement>(null);
+  const [nameTextW, setNameTextW] = useState(0);
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent(CALLBACK_NAME_CONFIRM_EVENT, { detail: showNameConfirm }));
-  }, [showNameConfirm]);
-  // При размонтировании — снимаем кнопку, чтобы навигация не осталась спрятанной.
-  useEffect(
-    () => () => {
-      window.dispatchEvent(new CustomEvent(CALLBACK_NAME_CONFIRM_EVENT, { detail: false }));
-    },
-    []
-  );
-  // Нажали «Подтвердить»: снимаем фокус с поля имени (закрывается клавиатура) и раскрываем форму.
+    if (nameMirrorRef.current) setNameTextW(nameMirrorRef.current.offsetWidth);
+  }, [data.name]);
+
+  // Режимы поля «Ваше имя» (когда показана кнопка «Готово»), зависят от числа пробелов:
+  //  • 0 пробелов (одно слово) — поле рядом с кнопкой, растёт вправо (nameHasSpace=false);
+  //  • ≥1 пробел (два слова)   — поле уходит ПОД кнопку и растёт по ширине (nameHasSpace);
+  //  • ≥2 пробелов (три слова) — то же + авто-уменьшение шрифта на максимуме ширины (nameShrink).
+  const nameWords = data.name.trim() ? data.name.trim().split(/\s+/) : [];
+  const nameSpaces = Math.max(0, nameWords.length - 1);
+
+  // Ширина внутренней области полей (реф на блок имени+телефона) — чтобы вычислить минимальную
+  // ширину поля имени: правый край короткого имени должен совпадать с правым краем поля телефона
+  // (колонка COL шириной 72% центрирована, её правый край = центр + 36% ширины области).
+  const nameBlockRef = useRef<HTMLDivElement>(null);
+  const [nameAreaW, setNameAreaW] = useState(0);
   useEffect(() => {
-    const onSubmit = () => {
-      nameRef.current?.blur();
-      setRevealed(true);
-    };
-    window.addEventListener(CALLBACK_NAME_SUBMIT_EVENT, onSubmit);
-    return () => window.removeEventListener(CALLBACK_NAME_SUBMIT_EVENT, onSubmit);
-  }, []);
+    const el = nameBlockRef.current;
+    if (!el) return;
+    const update = () => setNameAreaW(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+  // Поле начинается от центра области (+5px зазор), правый край телефона = центр + 36% ширины,
+  // значит минимальная ширина поля = 36% ширины области − 5px (снизу ограничиваем 108px).
+  const minInlineWidth = nameAreaW ? Math.max(108, Math.round(nameAreaW * 0.36 - 5)) : 108;
+
+  // Наличие пробела задаёт раскладку строки ввода (независимо от того, показана ли уже кнопка):
+  //  • 0 пробелов (одно слово) — поле рядом с кнопкой, растёт вправо (горизонтальная раскладка);
+  //  • ≥1 пробел (два+ слова)  — поле уходит ПОД кнопку (вертикальная раскладка, nameHasSpace).
+  // Уменьшение шрифта включаем только при ≥2 пробелах (три+ слова) и уже показанной кнопке.
+  const nameHasSpace = nameSpaces >= 1;
+  const nameShrink = showNameConfirm && nameSpaces >= 2;
+
+  // Инлайн-режим (одно слово): целевая ширина поля = имя + иконка/паддинги, минимум minInlineWidth
+  // (короткое имя — поле не схлопывается). Конструкция [кнопка «Готово» + поле] ВСЕГДА центрируется
+  // ЦЕЛИКОМ (правило «зазор строго по центру экрана» убрано — центрирование группы приоритетно):
+  // при росте поля зазор между кнопкой и полем сам смещается левее центра.
+  const inlineWidth = Math.max(nameTextW + 88, minInlineWidth);
+
+  // Ширина поля в вертикальном (stacked) режиме: сначала поле ПЛАВНО расширяется по горизонтали
+  // под длину имени — от ширины колонки (72% области, как у телефона) до максимума (вся ширина
+  // области). Пока имя влезает в этот диапазон — шрифт базовый. Когда поле упёрлось в максимум,
+  // а имя всё равно шире — только тогда подключается уменьшение шрифта (см. nameFontPx ниже).
+  const minStackWidth = nameAreaW ? Math.round(nameAreaW * 0.72) : 240;
+  const maxStackWidth = nameAreaW ? nameAreaW : 320;
+  const stackWidth = clamp(nameTextW + 88, minStackWidth, maxStackWidth);
+
+  // Размер шрифта имени (только при ≥2 пробелах): считаем от ЦЕЛЕВОЙ ширины поля (stackWidth), а не
+  // от анимируемой фактической. Иначе при повторном открытии окна замер попадал на ещё не доросшую
+  // (анимируемую) ширину — и шрифт застревал уменьшенным, хотя имя влезло бы базовым. Пока имя
+  // влезает (поле не на максимуме) — scale=1, базовый 16px; когда поле упёрлось в максимум и имя
+  // шире доступного места — уменьшаем пропорционально (нижний предел 8px). Замер nameTextW всегда
+  // базовым шрифтом (зеркало-спан), поэтому расчёт стабилен, без обратной связи.
+  const nameFontPx = useMemo(() => {
+    if (!nameShrink || nameTextW <= 0) return 16;
+    const avail = stackWidth - 60; // минус иконка слева (40), правый паддинг (16) и запас под каретку
+    if (avail <= 0) return 16;
+    const scale = Math.min(1, avail / nameTextW);
+    return Math.max(8, Math.round(16 * scale));
+  }, [nameShrink, nameTextW, stackWidth]);
 
   // «Изменить» в подвале: то же, что клик по полю имени — вернуть подпись-вопрос и поле на место.
   const startEditName = () => {
     setRevealed(false);
     requestAnimationFrame(() => nameRef.current?.focus());
   };
+
+  // ── Адаптивная кнопка «Изменить имя» в подвале ────────────────────────────────
+  // Имя (фиолетовое) центрировано по строке; если его левый край упирается в кнопку —
+  // кнопка плавно теряет части текста: «Изменить имя» → «Изменить» → только карандаш.
+  // Пороговые ширины кнопки меряем невидимыми клонами (full/short), имя — по реальному
+  // спану; расчёт детерминирован (клоны статичны) — без обратной связи от анимации.
+  const editRowRef = useRef<HTMLDivElement>(null);
+  const editNameRef = useRef<HTMLSpanElement>(null);
+  const editBtnFullRef = useRef<HTMLSpanElement>(null);
+  const editBtnShortRef = useRef<HTMLSpanElement>(null);
+  const [editMode, setEditMode] = useState<"full" | "short" | "icon">("full");
+  useEffect(() => {
+    if (!open || !revealed) return;
+    const row = editRowRef.current;
+    if (!row) return;
+    const GAP = 8; // мин. зазор между кнопкой и левым краем имени
+    const update = () => {
+      const nameW = editNameRef.current?.offsetWidth ?? 0;
+      if (!nameW) {
+        setEditMode("full");
+        return;
+      }
+      const left = (row.clientWidth - nameW) / 2; // левый край центрированного имени
+      const fullW = editBtnFullRef.current?.offsetWidth ?? 0;
+      const shortW = editBtnShortRef.current?.offsetWidth ?? 0;
+      setEditMode(left >= fullW + GAP ? "full" : left >= shortW + GAP ? "short" : "icon");
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [open, revealed, status, data.name]);
 
   // Пересчёт размера/положения бегунка по метрикам прокрутки внутренней области.
   const updateScrollbar = () => {
@@ -666,9 +753,16 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 {/* Поля: имя + телефон в узкой центрированной колонке (−40% по ширине).
                     shrink-0: дети flex-колонки НЕ сжимаются браузером при нехватке высоты — иначе
                     замер fitControls всегда видел «всё помещается» и ужатие кнопок не включалось. */}
-                <div className={cn(COL, "mt-auto shrink-0")}>
-                  {/* 1. Имя — необязательно */}
-                  <label className="block">
+                <div ref={nameBlockRef} className="mt-auto w-full shrink-0">
+                  {/* 1. Имя — необязательно. Блок имени занимает ВСЮ ширину (в отличие от узкой
+                      колонки COL): это нужно, чтобы поле могло уехать вплотную к правому краю окна,
+                      а слева от него поместилась кнопка «Подтвердить» (задача 2). Телефон ниже
+                      остаётся в прежней центрированной колонке COL. */}
+                  {/* Внешний контейнер — div (не label): внутри строки ввода теперь есть ещё и
+                      кнопка «Подтвердить», а <button> внутри <label> перехватил бы ассоциацию
+                      label→control. Клик-по-подписи для фокуса поля больше не нужен: сам <label>
+                      висит непосредственно на поле ввода (ниже). */}
+                  <div className="block">
                     {/* Подпись-вопрос: уезжает влево и схлопывается по высоте при раскрытии
                         (тогда поле имени поднимается к верху), выезжает обратно при возврате. */}
                     <div
@@ -698,25 +792,143 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                           revealed ? "-translate-y-full" : "translate-y-0"
                         )}
                       >
-                        {/* «Утопленный» вид поля (bg-surface-2 + внутренняя тень) + иконка слева —
-                            чтобы поле явно читалось как поле ВВОДА, а не как кнопка. */}
-                        <div className="relative">
-                          <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                          <input
-                            ref={nameRef}
-                            value={data.name}
-                            // Каждое слово имени — с заглавной буквы.
-                            onChange={(e) => setLeadField("name", capWords(e.target.value))}
-                            onFocus={onNameFocus}
-                            onBlur={onNameBlur}
-                            // Enter в поле имени — перейти дальше (снять фокус → форма раскрывается).
-                            onKeyDown={(e) => e.key === "Enter" && nameRef.current?.blur()}
-                            placeholder="Ваше имя"
-                            className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-4 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
-                          />
-                          {/* Кнопка «Подтвердить» больше НЕ живёт в поле: как только введено имя,
-                              она появляется внизу экрана на месте нижней навигации (задача 3) —
-                              см. CALLBACK_NAME_CONFIRM_EVENT и [[mobile-nav]]. */}
+                        {/* Строка ввода имени. По умолчанию поле «Ваше имя» — по центру и шириной
+                            72% (как остальные поля). Как только введён ≥1 символ и прошла секунда
+                            (showNameConfirm), поле сжимается под введённое имя, а рядом появляется
+                            кнопка «Готово»: без пробелов — слева от поля (ряд), с пробелом — над
+                            полем (столбец). Конструкция [кнопка + поле] центрируется ЦЕЛИКОМ; зазор
+                            между ними (10px в ряду / 8px в столбце) анимируется вместе с кнопкой. */}
+                        <div
+                          className={cn(
+                            "flex",
+                            nameHasSpace ? "flex-col items-center" : "items-center justify-center"
+                          )}
+                        >
+                          {/* Кнопка и поле разнесены по двум РАВНЫМ половинам строки, поэтому
+                              «условная линия» между ними (центр зазора 10px) приходится ровно на
+                              центр экрана: кнопка прижата к центру справа (pr-[5px]), поле — к центру
+                              слева (pl-[5px]). В покое левая половина схлопнута (w-0), а правая
+                              занимает всю строку и центрирует поле (72%). */}
+                          <div
+                            // Вертикальный режим: обёртка кнопки плавно раскрывается по высоте
+                            // (0→48px = кнопка h-12) с зазором 8px до поля (margin-bottom анимируется
+                            // вместе с высотой), толкая поле вниз; сама кнопка проявляется позже
+                            // (opacity с задержкой). Горизонтальный: кнопка растёт по ширине слева
+                            // от поля, конструкция центрируется целиком.
+                            style={
+                              nameHasSpace
+                                ? {
+                                    maxHeight: showNameConfirm ? 48 : 0,
+                                    marginBottom: showNameConfirm ? 8 : 0,
+                                    transition: "max-height 500ms ease-out, margin-bottom 500ms ease-out",
+                                  }
+                                : undefined
+                            }
+                            className={cn(
+                              "flex",
+                              nameHasSpace
+                                ? "w-full justify-center overflow-hidden"
+                                : showNameConfirm
+                                  ? "shrink-0"
+                                  : "w-0 justify-end overflow-hidden"
+                            )}
+                          >
+                          {/* Кнопка «Подтвердить»: прежний вид «клавиши», уменьшенный на 25%
+                              (h-16→h-12, border-4→3px, иконка h-8→h-6, текст 20→15px). Ширину и
+                              прозрачность анимируем раздельно: сперва поле забирает ширину и уезжает
+                              вправо (max-width, 500мс), затем в освободившемся слева месте проявляется
+                              кнопка (opacity с задержкой ~350мс) — «поле сместилось → появилась кнопка». */}
+                          <button
+                            type="button"
+                            tabIndex={showNameConfirm ? 0 : -1}
+                            aria-hidden={!showNameConfirm}
+                            aria-label="Готово"
+                            onClick={submitName}
+                            // opacity с задержкой 500мс — кнопка проявляется ТОЛЬКО ПОСЛЕ того, как
+                            // поле сместилось (вправо в инлайне / вниз в stacked; оба движения 500мс).
+                            // margin-right — зазор 10px до поля в ряду, растёт вместе с шириной кнопки
+                            // (в столбце зазор даёт margin-bottom обёртки выше).
+                            style={{
+                              transition:
+                                "max-width 500ms ease-out, margin-right 500ms ease-out, opacity 300ms ease-out 500ms",
+                              maxWidth: showNameConfirm ? 200 : 0,
+                              marginRight: !nameHasSpace && showNameConfirm ? 10 : 0,
+                              opacity: showNameConfirm ? 1 : 0,
+                            }}
+                            className={cn(
+                              "flex h-12 shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg border-[3px] border-primary/70 bg-primary/15 px-3 text-primary shadow-[0_3px_0_rgb(var(--primary)/0.45)] active:translate-y-px active:shadow-none",
+                              !showNameConfirm && "pointer-events-none border-0 px-0"
+                            )}
+                          >
+                            <CornerDownLeft className="h-6 w-6 shrink-0" strokeWidth={2.5} aria-hidden="true" />
+                            <span className="text-[15px] font-extrabold leading-none">Готово</span>
+                          </button>
+                          </div>
+                          {/* Обёртка поля: в покое занимает всю строку и центрирует поле (72%);
+                              при показанной кнопке — участвует в общем центрировании группы
+                              (min-w-0: при переполнении области поле ужимается, кнопка — нет). */}
+                          <div
+                            className={cn(
+                              "flex",
+                              nameHasSpace
+                                ? "w-full justify-center"
+                                : showNameConfirm
+                                  ? "min-w-0"
+                                  : "w-full justify-center"
+                            )}
+                          >
+                          {/* «Утопленный» вид поля (bg-surface-2 + внутренняя тень) + иконка слева —
+                              чтобы поле явно читалось как поле ВВОДА, а не как кнопка. По умолчанию —
+                              72% и по центру; при showNameConfirm поле сжимается по горизонтали ровно
+                              под введённое имя (ширина = текст + иконка + паддинги) и следует за длиной
+                              имени в реальном времени. Сам <label> — на поле: клик фокусирует ввод. */}
+                          <label
+                            // Инлайн-режим (одно слово): ширина под текущее имя = текст (nameTextW) +
+                            // место под иконку слева (pl-10=40) + правый паддинг (pr-4=16) + рамки/
+                            // каретка + запас ~30px. Нижний предел minInlineWidth — короткое имя не
+                            // схлопывает поле; длинное имя перекрывает предел и поле растёт (вся
+                            // конструкция [кнопка+поле] при этом остаётся центрированной целиком).
+                            // Stacked-режим (≥1 пробел): поле под кнопкой, ширина stackWidth — плавно
+                            // растёт под длину имени от колонки (72%) до максимума (вся ширина области);
+                            // дальше, при ≥2 пробелах, подключается уменьшение шрифта (nameFontPx).
+                            // duration-200: ширина следует за вводом в реальном времени, плавно.
+                            style={
+                              showNameConfirm
+                                ? { width: nameHasSpace ? stackWidth : inlineWidth }
+                                : undefined
+                            }
+                            className={cn(
+                              "relative transition-all duration-200 ease-out",
+                              showNameConfirm ? "min-w-0" : "w-[72%] min-w-[240px]"
+                            )}
+                          >
+                            <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                            <input
+                              ref={nameRef}
+                              value={data.name}
+                              // Каждое слово имени — с заглавной буквы.
+                              onChange={(e) => setLeadField("name", capWords(e.target.value))}
+                              onFocus={onNameFocus}
+                              onBlur={onNameBlur}
+                              // Enter в поле имени — перейти дальше (снять фокус → форма раскрывается).
+                              onKeyDown={(e) => e.key === "Enter" && nameRef.current?.blur()}
+                              placeholder="Ваше имя"
+                              // При ≥2 пробелах шрифт уменьшается под ширину поля (nameFontPx).
+                              // Зеркало-замер ниже остаётся базовым (шрифт не наследует уменьшение).
+                              style={nameShrink ? { fontSize: nameFontPx } : undefined}
+                              className="h-12 w-full rounded-md border border-hairline bg-surface-2 pl-10 pr-4 text-ink shadow-inner outline-none transition-colors placeholder:text-muted focus:border-primary focus:bg-surface focus:ring-2 focus:ring-primary/20"
+                            />
+                            {/* Невидимое зеркало текста для замера ширины имени (тот же унаследованный
+                                шрифт, что и у input). absolute → не влияет на раскладку поля. */}
+                            <span
+                              ref={nameMirrorRef}
+                              aria-hidden="true"
+                              className="pointer-events-none invisible absolute left-0 top-0 whitespace-pre"
+                            >
+                              {data.name}
+                            </span>
+                          </label>
+                          </div>
                         </div>
                         {/* Подпись под именем — «НЕ обязательно», зелёная. На 30% крупнее базового
                             text-xs (0.75rem × 1.3 = 0.975rem). Текст обёрнут в inline-block с
@@ -724,18 +936,20 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                             затем исчезает и начинает заново) — класс .animate-cb-underline. */}
                         {/* pb-1: даём место анимированному подчёркиванию (::after на bottom:-2px),
                             иначе его срезает верхний контейнер overflow-hidden (max-h-28). */}
-                        <span className="mt-1 block pb-1 text-right">
+                        {/* Подпись остаётся на ИСХОДНОМ месте (центрированные 72%, правый край на
+                            уровне поля в покое) и НЕ едет вправо вместе с полем при появлении кнопки. */}
+                        <span className="mt-1 mx-auto block w-[72%] pb-1 text-right">
                           <span className="animate-cb-underline relative inline-block text-[0.975rem] font-medium text-success">
                             НЕ обязательно
                           </span>
                         </span>
                       </div>
                     </div>
-                  </label>
+                  </div>
 
                   {/* 2. Телефон — обязательно. Выбор страны флаг-дропдауном + форматирование и
                        валидация из libphonenumber-js (для РФ — строго мобильный 9XX). */}
-                  <label className="mt-6 block">
+                  <label className={cn(COL, "mt-6 block")}>
                     <span className="mb-1.5 block text-center text-[1.05rem] font-medium text-ink">Номер телефона:</span>
                     <PhoneInput
                       country={country}
@@ -950,25 +1164,75 @@ export function CallbackModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div className="mb-4 flex flex-col items-stretch gap-1 text-[0.945rem] text-muted">
                   {/* 1-я строка: кнопка «Изменить имя» прижата к левому краю (absolute), а имя
                       клиента центрируется по всей ширине строки (не смещается кнопкой). */}
-                  <div className="relative flex min-h-[1.75rem] items-center">
+                  <div ref={editRowRef} className="relative flex min-h-[1.75rem] items-center">
                     <button
                       type="button"
                       onClick={startEditName}
-                      className="absolute left-0 inline-flex items-center gap-1 rounded-full border border-hairline bg-surface px-2.5 py-1 text-xs font-medium text-ink active:scale-95"
+                      aria-label="Изменить имя"
+                      className="absolute left-0 inline-flex items-center rounded-full border border-hairline bg-surface px-2.5 py-1 text-xs font-medium text-ink active:scale-95"
                     >
-                      {/* Пока имя не введено — приглашаем представиться; как только введено — «Изменить имя». */}
-                      <Pencil className="animate-pencil-wiggle h-3.5 w-3.5 text-primary" />{" "}
-                      {data.name.trim() ? "Изменить имя" : "Как можем к вам обращаться?"}
+                      {/* Пока имя не введено — приглашаем представиться; как только введено — «Изменить имя».
+                          Части текста плавно схлопываются (max-width+margin+opacity) по editMode:
+                          full → «Изменить имя», short → «Изменить», icon → только карандаш. */}
+                      <Pencil className="animate-pencil-wiggle h-3.5 w-3.5 shrink-0 text-primary" />
+                      {data.name.trim() ? (
+                        <>
+                          <span
+                            style={{
+                              maxWidth: editMode !== "icon" ? 80 : 0,
+                              marginLeft: editMode !== "icon" ? 4 : 0,
+                              opacity: editMode !== "icon" ? 1 : 0,
+                              transition:
+                                "max-width 300ms ease-out, margin-left 300ms ease-out, opacity 300ms ease-out",
+                            }}
+                            className="inline-block overflow-hidden whitespace-nowrap"
+                          >
+                            Изменить
+                          </span>
+                          <span
+                            style={{
+                              maxWidth: editMode === "full" ? 48 : 0,
+                              marginLeft: editMode === "full" ? 4 : 0,
+                              opacity: editMode === "full" ? 1 : 0,
+                              transition:
+                                "max-width 300ms ease-out, margin-left 300ms ease-out, opacity 300ms ease-out",
+                            }}
+                            className="inline-block overflow-hidden whitespace-nowrap"
+                          >
+                            имя
+                          </span>
+                        </>
+                      ) : (
+                        <span className="ml-1">Как можем к вам обращаться?</span>
+                      )}
                     </button>
-                    {/* Имя по центру строки. При пустом имени запятую не показываем. */}
+                    {/* Имя по центру строки. При пустом имени запятую не показываем.
+                        Внутренний inline-block-спан — для замера ширины имени (editMode). */}
                     {data.name.trim() && (
                       <span className="w-full text-center">
-                        <span className="font-semibold" style={{ color: "#b45cf2" }}>
-                          {data.name.trim()}
+                        <span ref={editNameRef} className="inline-block whitespace-nowrap">
+                          <span className="font-semibold" style={{ color: "#b45cf2" }}>
+                            {data.name.trim()}
+                          </span>
+                          ,
                         </span>
-                        ,
                       </span>
                     )}
+                    {/* Невидимые клоны кнопки (те же шрифт/паддинги/рамка) — замер пороговых
+                        ширин для режимов full/short. absolute+invisible: на раскладку не влияют. */}
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none invisible absolute left-0 top-0 flex whitespace-nowrap"
+                    >
+                      <span ref={editBtnFullRef} className="inline-flex items-center border px-2.5 py-1 text-xs font-medium">
+                        <span className="h-3.5 w-3.5 shrink-0" />
+                        <span className="ml-1">Изменить имя</span>
+                      </span>
+                      <span ref={editBtnShortRef} className="inline-flex items-center border px-2.5 py-1 text-xs font-medium">
+                        <span className="h-3.5 w-3.5 shrink-0" />
+                        <span className="ml-1">Изменить</span>
+                      </span>
+                    </span>
                   </div>
                   {/* 2-я строка: «мы вам перезвоним: …» по центру. */}
                   <div className="text-center">

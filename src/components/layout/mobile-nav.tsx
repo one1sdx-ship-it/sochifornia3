@@ -176,7 +176,8 @@ export function MobileNav() {
     const tap = tapRef.current;
     tapRef.current = null;
     if (!tap || tap.href !== href) return;
-    if (Math.abs(y - tap.y) > 12) return; // палец повело — это прокрутка, не тап
+    if (Math.abs(y - tap.y) > 18) return; // палец повело — это прокрутка, не тап (18: тот же
+    // допуск на «дрожание» пальца при тапе на фоне инерции, что и TAP_SLOP_PX в [[tap-rescue]])
     tapFiredRef.current = true;
     // Страховка: если браузер click так и не пришлёт, флаг не должен погасить следующий
     // клавиатурный Enter.

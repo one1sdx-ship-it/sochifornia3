@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Check, Clock, Star, Users } from "lucide-react";
 import type { Tour } from "@/data/types";
 import { GradientImage } from "@/components/gradient-image";
+import { FavoriteButton } from "@/components/reviews/favorite-button";
 import { PhotoSwiper } from "@/components/photo-swiper";
 import { Marquee } from "@/components/marquee";
 import { cn, formatPrice } from "@/lib/utils";
@@ -165,6 +166,11 @@ export function TourCard({ tour }: { tour: Tour }) {
           onTap={() => router.push(`/tours/${tour.slug}`)}
           imgClassName="transition-transform duration-500 group-hover:scale-105"
         />
+
+        {/* Кнопка «в избранное» — верхний правый угол, над растянутой ссылкой карточки */}
+        <div className="absolute right-3 top-3 z-20">
+          <FavoriteButton tourId={tour.id} />
+        </div>
 
         {/* Бейджи слева сверху */}
         <div className="pointer-events-none absolute left-3 top-3 z-10 flex gap-2">
